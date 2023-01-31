@@ -5,7 +5,7 @@ import os
 import csv
 
 protocols = ['http', 'https1', 'https2']
-test_case_modules = ["test-case", "test-case-tcnative"]
+test_case_modules = ["default", "tcnative"]
 native_options = [False, True]
 
 test = False
@@ -60,14 +60,14 @@ RunParameters = collections.namedtuple("RunParameters", ("module", "native", "pr
 
 
 def main():
-    run("./gradlew nativeCompile shadowJar")
+    run("./gradlew allVariants")
     results = {}
     for module in test_case_modules:
         for native in native_options:
             if native:
-                server_cmd = [f"{module}/build/native/nativeCompile/{module}"]
+                server_cmd = [f"test-case/build/native/native{module.capitalize() if module != 'default' else ''}Compile/test-case"]
             else:
-                server_cmd = ["java", "-Xmx1G", "-jar", f"{module}/build/libs/{module}-all.jar"]
+                server_cmd = ["java", "-Xmx1G", "-jar", f"test-case/build/libs/test-case-{module if module != 'default' else 'all'}.jar"]
             print(BOLD + " ".join(server_cmd) + DEFAULT)
             server_proc = subprocess.Popen(server_cmd)
             try:

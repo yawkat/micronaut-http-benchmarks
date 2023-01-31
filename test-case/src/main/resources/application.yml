@@ -14,3 +14,6 @@ micronaut:
         https:
           port: 8443
           ssl: true
+      event-loops:
+        default:
+          prefer-native-transport: true

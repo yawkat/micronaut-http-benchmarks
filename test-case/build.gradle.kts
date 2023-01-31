@@ -40,8 +40,4 @@ benchmarkVariants {
     variant("tcnative") {
         runtimeDependency("io.netty:netty-tcnative-boringssl-static:2.0.46.Final")
     }
-    variant("json") {
-        // this is stupid but only to show how to add a runtime dependency specific to a variant
-        runtimeDependency("io.micronaut.problem:micronaut-problem-json")
-    }
 }
