@@ -2,7 +2,10 @@ micronaut:
   server:
     ssl:
       enabled: true
-      buildSelfSigned: true
+      key-store:
+        path: classpath:server.p12
+        password: password
+        type: PKCS12
     netty:
       listeners:
         http1:

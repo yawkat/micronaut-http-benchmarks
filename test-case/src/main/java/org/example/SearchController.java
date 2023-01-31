@@ -1,5 +1,6 @@
 package org.example;
 
+import io.micronaut.core.annotation.Introspected;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.annotation.Body;
@@ -26,7 +27,9 @@ public class SearchController {
         return HttpResponse.notFound();
     }
 
+    @Introspected
     record Input(List<String> haystack, String needle) {}
 
+    @Introspected
     record Result(int listIndex, int stringIndex) {}
 }
