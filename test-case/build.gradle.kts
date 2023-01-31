@@ -1,6 +1,3 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
-
 plugins {
     id("io.micronaut.bench.variants")
 }
@@ -24,6 +21,8 @@ application {
 
 dependencies {
     annotationProcessor("io.micronaut:micronaut-http-validation")
+    annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
+    compileOnly("io.micronaut.serde:micronaut-serde-api")
     implementation("io.micronaut:micronaut-http-client")
     implementation("io.micronaut:micronaut-http-server-netty")
     implementation("ch.qos.logback:logback-classic")
@@ -36,12 +35,30 @@ tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }
 
-benchmarkVariants {
-    variant("tcnative") {
-        runtimeDependency("io.netty:netty-tcnative-boringssl-static:2.0.46.Final")
+benchmarkVariants.combinations {
+    dimension("tcnative") {
+        variant("notcnative") {
+
+        }
+        variant("tcnative") {
+            runtimeDependency("io.netty:netty-tcnative-boringssl-static:2.0.46.Final")
+        }
     }
-    variant("json") {
-        // this is stupid but only to show how to add a runtime dependency specific to a variant
-        runtimeDependency("io.micronaut.problem:micronaut-problem-json")
+    dimension("epoll") {
+        variant("epoll") {
+            runtimeDependency("io.netty:netty-transport-native-epoll:4.1.70.Final")
+        }
+        variant("noepoll") {
+
+        }
+    }
+    dimension("json") {
+        variant("jackson") {
+            runtimeDependency("io.micronaut:micronaut-jackson-databind")
+        }
+        variant("serde") {
+            runtimeDependency("io.micronaut.serde:micronaut-serde-jackson")
+            exclude("io.micronaut:micronaut-jackson-databind")
+        }
     }
 }
