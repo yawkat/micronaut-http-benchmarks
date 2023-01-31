@@ -37,7 +37,9 @@ abstract class AppVariants(
                     s.key.capitalize()
                 }
             }.joinToString("")
-            buildVariant(variantName, it.map { it.value })
+            if (!excludedVariants.contains(variantName)) {
+                buildVariant(variantName, it.map { it.value })
+            }
         }
     }
 
@@ -83,9 +85,14 @@ abstract class AppVariants(
 
     class DimensionsSpec {
         val dimensions = mutableMapOf<String, DimensionSpec>()
+        val excludedVariants = mutableSetOf<String>()
 
         fun dimension(dimensionName: String, dimensionSpec: Action<in DimensionSpec>) {
             dimensions.put(dimensionName, DimensionSpec().apply { dimensionSpec.execute(this) })
+        }
+
+        fun exclude(variantName: String) {
+            excludedVariants.add(variantName)
         }
     }
 
