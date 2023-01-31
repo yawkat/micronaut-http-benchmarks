@@ -37,6 +37,7 @@ public class BasicSimulation extends Simulation {
             case "http" -> httpProtocol;
             case "https1" -> https1Protocol;
             case "https2" -> https2Protocol;
+            default -> throw new IllegalArgumentException("Unknown protocol");
         };
         setUp(scn.injectOpen(CoreDsl.constantUsersPerSec(1000).during(10)))
                 .protocols(protocol);
