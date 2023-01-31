@@ -1,7 +1,8 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
+
 plugins {
-    id("java")
-    id("io.micronaut.application") version "3.7.0"
-    id("com.github.johnrengelman.shadow") version "7.1.2"
+    id("io.micronaut.bench.variants")
 }
 
 repositories {
@@ -31,6 +32,16 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.1")
 }
 
-tasks.getByName<Test>("test") {
+tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+}
+
+benchmarkVariants {
+    variant("tcnative") {
+        runtimeDependency("io.netty:netty-tcnative-boringssl-static:2.0.46.Final")
+    }
+    variant("json") {
+        // this is stupid but only to show how to add a runtime dependency specific to a variant
+        runtimeDependency("io.micronaut.problem:micronaut-problem-json")
+    }
 }
