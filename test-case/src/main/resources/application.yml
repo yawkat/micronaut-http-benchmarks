@@ -1,0 +1,13 @@
+micronaut:
+  server:
+    ssl:
+      enabled: true
+      buildSelfSigned: true
+    netty:
+      listeners:
+        http1:
+          port: 8080
+          ssl: false
+        https:
+          port: 8443
+          ssl: true
