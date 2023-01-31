@@ -31,10 +31,11 @@ abstract class AppVariants(
         spec.execute(this)
         dimensions.values.map { it.variants.entries.toList() }.combinations().forEach {
             val variantName = it.mapIndexed { i, s ->
+                val baseName = s.value.dimensionName + s.key.capitalize()
                 if (i == 0) {
-                    s.key
+                    baseName
                 } else {
-                    s.key.capitalize()
+                    baseName.capitalize()
                 }
             }.joinToString("")
             if (!excludedVariants.contains(variantName)) {
@@ -88,7 +89,7 @@ abstract class AppVariants(
         val excludedVariants = mutableSetOf<String>()
 
         fun dimension(dimensionName: String, dimensionSpec: Action<in DimensionSpec>) {
-            dimensions.put(dimensionName, DimensionSpec().apply { dimensionSpec.execute(this) })
+            dimensions.put(dimensionName, DimensionSpec(dimensionName).apply { dimensionSpec.execute(this) })
         }
 
         fun exclude(variantName: String) {
@@ -96,13 +97,13 @@ abstract class AppVariants(
         }
     }
 
-    class DimensionSpec {
+    class DimensionSpec(val name: String) {
         val variants = mutableMapOf<String, VariantSpec>()
 
-        fun variant(variantName: String, spec: Action<in VariantSpec>) = variants.put(variantName, VariantSpec().apply { spec.execute(this) })
+        fun variant(variantName: String, spec: Action<in VariantSpec>) = variants.put(variantName, VariantSpec(name).apply { spec.execute(this) })
     }
 
-    class VariantSpec {
+    class VariantSpec(val dimensionName: String) {
         internal val runtimeDependencies = mutableListOf<Any>()
         internal val runtimeExcludes = mutableListOf<Any>()
 

@@ -37,18 +37,18 @@ tasks.withType<Test>().configureEach {
 
 benchmarkVariants.combinations {
     dimension("tcnative") {
-        variant("notcnative") {
+        variant("off") {
 
         }
-        variant("tcnative") {
+        variant("on") {
             runtimeDependency("io.netty:netty-tcnative-boringssl-static:2.0.46.Final")
         }
     }
     dimension("epoll") {
-        variant("epoll") {
+        variant("off") {
             runtimeDependency("io.netty:netty-transport-native-epoll:4.1.70.Final")
         }
-        variant("noepoll") {
+        variant("on") {
 
         }
     }
