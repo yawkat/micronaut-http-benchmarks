@@ -41,12 +41,12 @@ benchmarkVariants.combinations {
 
         }
         variant("on") {
-            runtimeDependency("io.netty:netty-tcnative-boringssl-static:2.0.46.Final")
+            runtimeDependency("io.netty:netty-tcnative-boringssl-static")
         }
     }
     dimension("epoll") {
         variant("off") {
-            runtimeDependency("io.netty:netty-transport-native-epoll:4.1.70.Final")
+            runtimeDependency("io.netty:netty-transport-native-epoll")
         }
         variant("on") {
 
