@@ -4,10 +4,12 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.graalvm.buildtools.gradle.dsl.GraalVMExtension
 import org.gradle.api.Action
 import org.gradle.api.artifacts.ConfigurationContainer
+import org.gradle.api.artifacts.ModuleDependency
 import org.gradle.api.artifacts.dsl.DependencyHandler
 import org.gradle.api.plugins.JavaApplication
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskContainer
+import org.gradle.kotlin.dsl.exclude
 import javax.inject.Inject
 
 abstract class AppVariants(
@@ -25,7 +27,22 @@ abstract class AppVariants(
     @get:Inject
     protected abstract val dependencies: DependencyHandler
 
-    fun variant(variantName: String, spec: Action<in Spec>) {
+    fun combinations(spec: Action<in DimensionsSpec>) = DimensionsSpec().run {
+        spec.execute(this)
+        dimensions.values.map { it.variants.entries.toList() }.combinations().forEach {
+            val variantName = it.mapIndexed { i, s ->
+                if (i == 0) {
+                    s.key
+                } else {
+                    s.key.capitalize()
+                }
+            }.joinToString("")
+            buildVariant(variantName, it.map { it.value })
+        }
+    }
+
+
+    private fun buildVariant(variantName: String, variantSpecs: List<VariantSpec>) {
         val dependenciesConf = configurations.create("${variantName}Variant") {
             isCanBeConsumed = false
             isCanBeResolved = false
@@ -53,14 +70,51 @@ abstract class AppVariants(
             }
             exclude("META-INF/INDEX.LIST", "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "module-info.class")
         }
-        spec.execute(object : Spec {
-            override fun runtimeDependency(notation: Any) {
-                dependencies.add(dependenciesConf.name, notation)
+        variantSpecs.forEach { v ->
+            v.runtimeDependencies.forEach {
+                dependencies.add(dependenciesConf.name, it)
             }
-        })
+            v.runtimeExcludes.forEach {
+                val dep = dependencies.create(it) as ModuleDependency
+                classpathConf.exclude(dep.group, dep.name)
+            }
+        }
     }
 
-    interface Spec {
-        fun runtimeDependency(notation: Any)
+    class DimensionsSpec {
+        val dimensions = mutableMapOf<String, DimensionSpec>()
+
+        fun dimension(dimensionName: String, dimensionSpec: Action<in DimensionSpec>) {
+            dimensions.put(dimensionName, DimensionSpec().apply { dimensionSpec.execute(this) })
+        }
     }
+
+    class DimensionSpec {
+        val variants = mutableMapOf<String, VariantSpec>()
+
+        fun variant(variantName: String, spec: Action<in VariantSpec>) = variants.put(variantName, VariantSpec().apply { spec.execute(this) })
+    }
+
+    class VariantSpec {
+        internal val runtimeDependencies = mutableListOf<Any>()
+        internal val runtimeExcludes = mutableListOf<Any>()
+
+        fun runtimeDependency(notation: Any) = runtimeDependencies.add(notation)
+        fun exclude(notation: Any) = runtimeExcludes.add(notation)
+    }
+}
+
+inline fun <reified T> List<List<T>>.combinations(): List<List<T>> {
+    val result = mutableListOf(mutableListOf<T>())
+    for (list in this) {
+        val temp = mutableListOf<MutableList<T>>()
+        for (item in list) {
+            for (combination in result) {
+                temp.add(mutableListOf(*combination.toTypedArray(), item))
+            }
+        }
+        result.clear()
+        result.addAll(temp)
+    }
+    return result
 }

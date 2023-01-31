@@ -6,6 +6,7 @@ import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.annotation.Body;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Post;
+import io.micronaut.serde.annotation.Serdeable;
 
 import java.util.List;
 
@@ -28,8 +29,10 @@ public class SearchController {
     }
 
     @Introspected
+    @Serdeable
     record Input(List<String> haystack, String needle) {}
 
     @Introspected
+    @Serdeable
     record Result(int listIndex, int stringIndex) {}
 }
