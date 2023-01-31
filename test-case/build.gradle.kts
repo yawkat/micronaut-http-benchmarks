@@ -1,6 +1,7 @@
 plugins {
     id("java")
     id("io.micronaut.application") version "3.7.0"
+    id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
 repositories {
