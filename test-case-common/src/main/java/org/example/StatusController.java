@@ -17,33 +17,32 @@ package org.example;
 
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Get;
+import io.micronaut.http.netty.channel.EventLoopGroupFactory;
+import io.micronaut.json.JsonMapper;
 import io.micronaut.serde.annotation.Serdeable;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslProvider;
+import jakarta.inject.Inject;
 
 @Controller("/status")
 public class StatusController {
+    @Inject
+    JsonMapper jsonMapper;
+
+    @Inject
+    EventLoopGroupFactory eventLoopGroupFactory;
+
     @Get
     public Status getStatus() {
-        return new Status("OK",
-                hasClass("io.netty.channel.epoll.Epoll"),
-                hasClass("io.netty.internal.tcnative.Library"),
-                hasClass("io.micronaut.serde.jackson.JacksonDecoder"),
-                hasClass("com.fasterxml.jackson.databind.ObjectMapper")
+        return new Status(
+                eventLoopGroupFactory.serverSocketChannelClass().getName(),
+                SslContext.defaultServerProvider(),
+                jsonMapper.getClass().getName()
         );
     }
 
-    private static boolean hasClass(String className) {
-        try {
-            Class.forName(className);
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
-    }
-
     @Serdeable
-    record Status(String status,
-                  boolean epoll,
-                  boolean tcnative,
-                  boolean serde,
-                  boolean jackson) {}
+    record Status(String serverSocketChannelImplementation,
+                  SslProvider sslProvider,
+                  String jsonMapperImplementation) {}
 }
