@@ -25,9 +25,10 @@ public class StatusController {
     public Status getStatus() {
         return new Status("OK",
                 hasClass("io.netty.channel.epoll.Epoll"),
-                hasClass("io.netty.internal.tcnative.SSL"),
+                hasClass("io.netty.internal.tcnative.Library"),
                 hasClass("io.micronaut.serde.jackson.JacksonDecoder"),
-                hasClass("com.fasterxml.jackson.databind.ObjectMapper"));
+                hasClass("com.fasterxml.jackson.databind.ObjectMapper")
+        );
     }
 
     private static boolean hasClass(String className) {
