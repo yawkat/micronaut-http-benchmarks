@@ -6,5 +6,5 @@ plugins {
 }
 
 dependencies {
-    runtimeOnly("io.netty:netty-tcnative-boringssl-static")
+    runtimeOnly("io.netty:netty-tcnative-boringssl-static::linux-x86_64")
 }

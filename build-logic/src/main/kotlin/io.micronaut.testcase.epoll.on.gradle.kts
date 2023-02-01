@@ -6,5 +6,5 @@ plugins {
 }
 
 dependencies {
-    runtimeOnly("io.netty:netty-transport-native-epoll")
+    runtimeOnly("io.netty:netty-transport-native-epoll::linux-x86_64")
 }
