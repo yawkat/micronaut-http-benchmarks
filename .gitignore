@@ -7,3 +7,6 @@ build/
 *.iws
 *.iml
 *.ipr
+
+results.json
+pgo-data/

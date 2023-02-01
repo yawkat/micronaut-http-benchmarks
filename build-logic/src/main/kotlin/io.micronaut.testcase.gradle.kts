@@ -52,8 +52,20 @@ tasks.withType<Jar>().configureEach {
     archiveBaseName.set(artifactName)
 }
 
-graalvmNative.binaries.all {
-    imageName.set(artifactName)
+graalvmNative {
+    toolchainDetection.set(false)
+    binaries.all {
+        imageName.set(artifactName)
+
+        buildArgs.add("--gc=G1")
+        if (System.getProperty("pgoInstrument") != null) {
+            buildArgs.add("--pgo-instrument")
+        }
+        val pgoDataDirectory = System.getProperty("pgoDataDirectory")
+        if (pgoDataDirectory != null) {
+            buildArgs.add("--pgo=$pgoDataDirectory/$artifactName")
+        }
+    }
 }
 
 // The following configurations are used to aggregate the shadowJar and nativeImage tasks
