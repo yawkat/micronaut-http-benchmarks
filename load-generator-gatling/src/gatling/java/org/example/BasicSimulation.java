@@ -39,7 +39,7 @@ public class BasicSimulation extends Simulation {
             case "https2" -> https2Protocol;
             default -> throw new IllegalArgumentException("Unknown protocol");
         };
-        setUp(scn.injectOpen(CoreDsl.constantUsersPerSec(1000).during(10)))
+        setUp(scn.injectOpen(CoreDsl.constantUsersPerSec(500).during(Integer.getInteger("duration", 10))))
                 .protocols(protocol);
     }
 }
