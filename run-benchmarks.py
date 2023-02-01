@@ -127,7 +127,7 @@ def prepare_pgo(duration_per_test, parameters):
     to_run = [
         p
         for p in parameters
-        if p.protocol != DEFAULT_DIMENSIONS["protocol"][0] # one profile run for all protocols
+        if p.protocol == DEFAULT_DIMENSIONS["protocol"][0] # one profile run for all protocols
         if p.native
     ]
     for i, params in enumerate(to_run):
@@ -149,7 +149,7 @@ def verify_features(parameters):
     to_run = [
         p
         for p in parameters
-        if p.protocol != DEFAULT_DIMENSIONS["protocol"][0] # one profile run for all protocols
+        if p.protocol == DEFAULT_DIMENSIONS["protocol"][0] # one profile run for all protocols
     ]
     results = {}
     for i, params in enumerate(to_run):
@@ -181,8 +181,6 @@ def verify_features(parameters):
         else:
             line.append(json_implementation)
         print(" ".join(line))
-
-
 
 
 def main():
