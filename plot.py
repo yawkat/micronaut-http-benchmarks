@@ -8,7 +8,18 @@ with open("results.json") as f:
 
 fig, ax = plt.subplots()
 ax.semilogy()
-ax.boxplot([row["ok_times"] for row in results])
+if "ok_times" in results[0]:
+    # gatling results
+    ax.boxplot([row["ok_times"] for row in results])
+if "time_to_1st_byte" in results[0]:
+    # h2load results
+    ax.bar(
+        x=[i for i in range(len(results))],
+        height=[row["time_to_1st_byte"]["mean"] for row in results],
+        #yerr=[row["time_to_1st_byte"]["sd"] for row in results],
+    )
+    print([row["time_to_1st_byte"]["mean"] for row in results])
+    plt.ylim(bottom=1000000)
 
 
 def parameter_label(parameters):
@@ -22,7 +33,7 @@ def parameter_label(parameters):
     return " ".join(s)
 
 
-plt.xticks(rotation=90)
+plt.xticks(list(range(len(results))), rotation=90)
 ax.set_xticklabels([parameter_label(row["parameters"]) for row in results])
 plt.tight_layout()
 

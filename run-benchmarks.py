@@ -65,6 +65,67 @@ def run_gatling(protocol: str, duration_per_test: int):
     )
 
 
+def parse_h2load_time(time: str) -> float:
+    if time.endswith("ns"):
+        return float(time[:-2].lstrip())
+    if time.endswith("µs") or time.endswith("us"):
+        return float(time[:-2].lstrip()) * 1000
+    if time.endswith("ms"):
+        return float(time[:-2].lstrip()) * 1000_000
+    if time.endswith("s"):
+        return float(time[:-1].lstrip()) * 1000_000_000
+    raise ValueError(f"Cannot parse time: {time}")
+
+
+SummaryStats = collections.namedtuple("SummaryStats", ("min", "max", "mean", "sd", "dsd"))
+
+
+def parse_h2load_metric(line: str):
+    line = line[len("time for request:    "):]  # remove caption
+    parts = line.strip().split()
+    return SummaryStats(
+        min=parse_h2load_time(parts[0]),
+        max=parse_h2load_time(parts[1]),
+        mean=parse_h2load_time(parts[2]),
+        sd=parse_h2load_time(parts[3]),
+        dsd=float(parts[4].lstrip().removesuffix("%")) / 100,
+    )
+
+
+H2loadResult = collections.namedtuple("H2loadResult", ("time_for_request", "time_for_connect", "time_to_1st_byte"))
+
+
+def run_h2load(protocol: str, duration_per_test: int):
+    conn_per_s = 500
+    total_conns = conn_per_s * duration_per_test
+    cmd = [
+        "h2load",
+        "--no-tls-proto=http/1.1",  # for http, always use http/1.1
+        "--npn-list=" + ('http/1.1' if protocol == 'https1' else 'h2'), # for https, set the right protocol
+        "-d", "test-body.json",
+        "-H", "Content-Type: application/json",
+        f"--clients={total_conns}",
+        f"--requests={total_conns}",
+        f"--rate={conn_per_s}",
+        "--threads=8",
+        ("http://localhost:8080" if protocol == "http" else "https://localhost:8443") + "/search/find"
+    ]
+    print(BOLD + " ".join(cmd) + DEFAULT)
+    output = subprocess.run(cmd, check=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
+    print(output)
+    tfr = None
+    tfc = None
+    ttfb = None
+    for line in output.split("\n"):
+        if line.startswith("time for request:"):
+            tfr = parse_h2load_metric(line)
+        elif line.startswith("time for connect:"):
+            tfc = parse_h2load_metric(line)
+        elif line.startswith("time to 1st byte:"):
+            ttfb = parse_h2load_metric(line)
+    return H2loadResult(tfr, tfc, ttfb)
+
+
 def build_server_command(params: RunParameters):
     combination_string = build_combination_string(params)
     if params.native:
@@ -95,7 +156,8 @@ def benchmark(duration_per_test, parameters):
         print(BOLD + " ".join(server_cmd) + DEFAULT)
         server_proc = subprocess.Popen(server_cmd)
         try:
-            results[params] = run_gatling(params.protocol, duration_per_test)
+            time.sleep(1 if params.native else 3)  # wait for startup
+            results[params] = run_h2load(params.protocol, duration_per_test)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -103,22 +165,31 @@ def benchmark(duration_per_test, parameters):
         json.dump([
             {
                 "parameters": param._asdict(),
-                "ko": result.ko,
-                "ok_times": result.ok_times
+                **{
+                    k: v._asdict() if type(v) is SummaryStats else v
+                    for k, v
+                    in result._asdict().items()
+                }
             }
             for param, result in results.items()
         ], f)
-    for param, (ko, ok_times) in results.items():
-        ok_times.sort()
-        print(
-            param,
-            len(ok_times),
-            ko,
-            ok_times[int(len(ok_times) * 0.5)],
-            ok_times[int(len(ok_times) * 0.95)],
-            max(ok_times),
-            sum(ok_times) / len(ok_times)
-        )
+    for param, result in results.items():
+        if type(result) is GatlingResult:
+            result.ok_times.sort()
+            print(
+                param,
+                len(result.ok_times),
+                result.ko,
+                result.ok_times[int(len(result.ok_times) * 0.5)],
+                result.ok_times[int(len(result.ok_times) * 0.95)],
+                max(result.ok_times),
+                sum(result.ok_times) / len(result.ok_times)
+            )
+        elif type(result) is H2loadResult:
+            print(
+                param,
+                f"{result.time_to_1st_byte.mean / 1000000}ms"
+            )
 
 
 def prepare_pgo(duration_per_test, parameters):
@@ -137,7 +208,7 @@ def prepare_pgo(duration_per_test, parameters):
         server_proc = subprocess.Popen(server_cmd)
         try:
             for protocol in DEFAULT_DIMENSIONS["protocol"]:
-                run_gatling(protocol, duration_per_test)
+                run_h2load(protocol, duration_per_test)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -200,7 +271,7 @@ def main():
         dimensions["epoll"] = [False]
         dimensions["native"] = [False]
         dimensions["json"] = ["jackson"]
-        dimensions["protocol"] = ["http"]
+        dimensions["protocol"] = [DEFAULT_DIMENSIONS["protocol"][0]]
         duration_per_test = 10
     if args.prepare_pgo:
         duration_per_test = 2
