@@ -17,4 +17,5 @@ micronaut:
           ssl: true
       event-loops:
         default:
+          num-threads: 1
           prefer-native-transport: true
