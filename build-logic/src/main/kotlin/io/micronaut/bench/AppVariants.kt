@@ -3,6 +3,7 @@ package io.micronaut.bench
 import org.gradle.api.Action
 import org.gradle.api.initialization.Settings
 import org.gradle.api.invocation.Gradle
+import org.gradle.api.plugins.JavaPluginExtension
 import java.io.File
 import javax.inject.Inject
 
@@ -13,23 +14,37 @@ abstract class AppVariants(val settings: Settings) {
 
     fun combinations(spec: Action<in DimensionsSpec>) = DimensionsSpec().run {
         spec.execute(this)
-        dimensions.values.map { it.variants.entries.toList() }.combinations().forEach {
-            val path = it.map { s ->
+        dimensions.values.map { it.variants.entries.toList() }.combinations().forEach { combination ->
+            val variantNames = combination.map { s ->
                 "${s.value.dimensionName}-${s.key}"
-            }.joinToString("/")
+            }
+            if (excludedVariantSpecs.any { it(variantNames) }) {
+                return@forEach
+            }
+            val path = variantNames.joinToString("/")
             if (!excludedVariants.contains(path)) {
-                buildVariant(path, it.map { it.value })
+                buildVariant(path, combination.map { it.value }, variantNames)
             }
         }
     }
 
-    private fun buildVariant(path: String, variantSpecs: List<VariantSpec>) {
+    private fun buildVariant(path: String, variantSpecs: List<VariantSpec>, variantNames: List<String>) {
         val projectPath = ":test-case:${path.replace('/', ':')}"
         settings.include(projectPath)
         settings.project(projectPath).setProjectDir(File(settings.rootDir, "test-case-common"))
         gradle.beforeProject {
             if (this.path == projectPath) {
                 setBuildDir(File(projectDir, "build/${path}"))
+                project.plugins.withId("java") {
+                    project.extensions.findByType(JavaPluginExtension::class.java)?.let { java ->
+                        variantNames.forEach { variantName ->
+                            java.sourceSets.all {
+                                this.java.srcDir("src/$name/variants/$variantName/java")
+                                this.java.srcDir("src/$name/variants/$variantName/java")
+                            }
+                        }
+                    }
+                }
             }
         }
         gradle.afterProject {
@@ -48,6 +63,7 @@ abstract class AppVariants(val settings: Settings) {
     class DimensionsSpec {
         val dimensions = mutableMapOf<String, DimensionSpec>()
         val excludedVariants = mutableSetOf<String>()
+        val excludedVariantSpecs = mutableListOf<(List<String>) -> Boolean>()
 
         fun dimension(dimensionName: String, dimensionSpec: Action<in DimensionSpec>) {
             dimensions.put(dimensionName, DimensionSpec(dimensionName).apply { dimensionSpec.execute(this) })
@@ -55,6 +71,10 @@ abstract class AppVariants(val settings: Settings) {
 
         fun exclude(variantName: String) {
             excludedVariants.add(variantName)
+        }
+
+        fun exclude(predicate: (List<String>) -> Boolean) {
+            excludedVariantSpecs.add(predicate)
         }
     }
 
