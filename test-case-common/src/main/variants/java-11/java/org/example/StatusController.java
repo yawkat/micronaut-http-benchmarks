@@ -1,0 +1,60 @@
+/*
+ * Copyright 2003-2021 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.example;
+
+import io.micronaut.http.annotation.Controller;
+import io.micronaut.http.annotation.Get;
+import io.micronaut.serde.annotation.Serdeable;
+
+@Controller("/status")
+public class StatusController {
+    @Get
+    public Status getStatus() {
+        return new Status("OK",
+                hasClass("io.netty.channel.epoll.Epoll"),
+                hasClass("io.netty.internal.tcnative.Library"),
+                hasClass("io.micronaut.serde.jackson.JacksonDecoder"),
+                hasClass("com.fasterxml.jackson.databind.ObjectMapper")
+        );
+    }
+
+    private static boolean hasClass(String className) {
+        try {
+            Class.forName(className);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    @Serdeable
+    public static class Status {
+        private final String status;
+        private final boolean epoll;
+        private final boolean tcnative;
+        private final boolean serde;
+        private final boolean jackson;
+
+        public Status(String status, boolean epoll, boolean tcnative, boolean serde, boolean jackson) {
+            this.status = status;
+            this.epoll = epoll;
+            this.tcnative = tcnative;
+            this.serde = serde;
+            this.jackson = jackson;
+        }
+    }
+
+}
