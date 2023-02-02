@@ -13,10 +13,13 @@ if "ok_times" in results[0]:
     ax.boxplot([row["ok_times"] for row in results])
 if "time_to_1st_byte" in results[0]:
     # h2load results
-    ax.bar(
+    ax.errorbar(
         x=[i for i in range(len(results))],
-        height=[row["time_to_1st_byte"]["mean"] for row in results],
-        #yerr=[row["time_to_1st_byte"]["sd"] for row in results],
+        y=[row["time_to_1st_byte"]["mean"] for row in results],
+        yerr=[row["time_to_1st_byte"]["sd"] for row in results],
+        lolims=1,
+        linewidth=0,
+        fmt="."
     )
     print([row["time_to_1st_byte"]["mean"] for row in results])
     plt.ylim(bottom=1000000)
