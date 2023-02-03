@@ -58,7 +58,7 @@ graalvmNative {
         imageName.set(artifactName)
 
         buildArgs.add("--gc=G1")
-        buildArgs.add("-H:+AllowVMInspection")
+        buildArgs.add("--enable-monitoring=jfr")
         if (System.getProperty("pgoInstrument") != null) {
             buildArgs.add("--pgo-instrument")
         }
