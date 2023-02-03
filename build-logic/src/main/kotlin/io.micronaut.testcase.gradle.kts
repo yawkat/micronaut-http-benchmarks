@@ -3,10 +3,7 @@
  * it as a Micronaut application. It should define the "common" code
  * for all benchmarks.
  */
-import org.gradle.api.tasks.testing.Test
-import org.gradle.kotlin.dsl.dependencies
-import org.gradle.kotlin.dsl.repositories
-import org.gradle.kotlin.dsl.withType
+import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
 
 plugins {
     id("io.micronaut.application")
@@ -50,6 +47,12 @@ val artifactName = project.path.replace(":", "-").substring(":test-case:".length
 
 tasks.withType<Jar>().configureEach {
     archiveBaseName.set(artifactName)
+}
+
+if (artifactName.contains("epoll-on") || artifactName.contains("tcnative-on")) {
+    tasks.withType<BuildNativeImageTask>().configureEach {
+        enabled = false
+    }
 }
 
 graalvmNative {

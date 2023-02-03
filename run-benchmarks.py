@@ -1,10 +1,12 @@
 #!/usr/bin/python3
 import collections
-import subprocess
-import os
 import csv
-import json
 import itertools
+import json
+import os
+import random
+import string
+import subprocess
 import time
 
 import requests
@@ -15,7 +17,10 @@ DEFAULT_DIMENSIONS = {
     "native": [False, True],
     "tcnative": [False, True],
     "epoll": [False, True],
-    "json": ["jackson", "serde"],
+    "json": ["jackson"], # no serde for now
+    "micronaut": ["3.8"],
+    "java": ["17"],
+    "haystack_size": [6, 1000, 100_000]
 }
 
 RunParameters = collections.namedtuple("RunParameters", DEFAULT_DIMENSIONS.keys())
@@ -27,9 +32,14 @@ DEFAULT = '\033[0m'
 
 
 def build_parameters(dimensions):
-    return [
+    combs = [
         RunParameters(*combination)
         for combination in itertools.product(*dimensions.values())
+    ]
+    return [
+        c for c in combs
+        # disable epoll/tcnative for native image, because they don't work anyway.
+        if not c.native or (not c.tcnative and not c.epoll)
     ]
 
 
@@ -95,14 +105,28 @@ def parse_h2load_metric(line: str):
 H2loadResult = collections.namedtuple("H2loadResult", ("time_for_request", "time_for_connect", "time_to_1st_byte"))
 
 
-def run_h2load(protocol: str, duration_per_test: int):
+def random_string(length):
+    return ''.join(random.choices(string.ascii_lowercase, k=length))
+
+
+def run_h2load(protocol: str, duration_per_test: int, body_size_parameter: int):
     conn_per_s = 500
     total_conns = conn_per_s * duration_per_test
+    # could use a temp file, but this allows running the tests outside of this script
+    body_file_name = f"test-body-{body_size_parameter}.json"
+    with open(body_file_name, mode="w") as body_file:
+        haystack = [random_string(body_size_parameter) for _ in range(6)]
+        offset = random.randrange(0, body_size_parameter - 3)
+        json.dump({
+            "haystack": haystack,
+            "needle": random.choice(haystack)[offset:offset + 3]
+        }, body_file)
+
     cmd = [
         "h2load",
         "--no-tls-proto=http/1.1",  # for http, always use http/1.1
         "--npn-list=" + ('http/1.1' if protocol == 'https1' else 'h2'), # for https, set the right protocol
-        "-d", "test-body.json",
+        "-d", body_file.name,
         "-H", "Content-Type: application/json",
         f"--clients={total_conns}",
         f"--requests={total_conns}",
@@ -138,7 +162,7 @@ def build_combination_string(params):
     combination_string = "-".join([
         k + "-" + (params[i] if type(params[i]) is str else ("on" if params[i] else "off"))
         for i, k in enumerate(DEFAULT_DIMENSIONS.keys())
-        if k != "native" and k != "protocol"
+        if k not in ("native", "protocol", "haystack_size")
     ])
     return combination_string
 
@@ -157,7 +181,7 @@ def benchmark(duration_per_test, parameters):
         server_proc = subprocess.Popen(server_cmd)
         try:
             time.sleep(1 if params.native else 3)  # wait for startup
-            results[params] = run_h2load(params.protocol, duration_per_test)
+            results[params] = run_h2load(params.protocol, duration_per_test, params.haystack_size)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -208,7 +232,8 @@ def prepare_pgo(duration_per_test, parameters):
         server_proc = subprocess.Popen(server_cmd)
         try:
             for protocol in DEFAULT_DIMENSIONS["protocol"]:
-                run_h2load(protocol, duration_per_test)
+                for haystack_size in DEFAULT_DIMENSIONS["haystack_size"]:
+                    run_h2load(protocol, duration_per_test, haystack_size)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -267,8 +292,8 @@ def main():
 
     dimensions = dict(DEFAULT_DIMENSIONS)
     if args.test_run:
-        dimensions["tcnative"] = [False]
-        dimensions["epoll"] = [False]
+        dimensions["tcnative"] = [True]
+        dimensions["epoll"] = [True]
         dimensions["native"] = [False]
         dimensions["json"] = ["jackson"]
         dimensions["protocol"] = [DEFAULT_DIMENSIONS["protocol"][0]]

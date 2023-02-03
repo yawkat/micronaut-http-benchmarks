@@ -29,14 +29,14 @@ configure<io.micronaut.bench.AppVariants> {
         }
         dimension("json") {
             variant("jackson")
-            variant("serde")
+            //variant("serde")
         }
         dimension("micronaut") {
             variant("3.8")
-            variant("4.0")
+            //variant("4.0")
         }
         dimension("java") {
-            variant("11")
+            //variant("11")
             variant("17")
         }
         exclude {
