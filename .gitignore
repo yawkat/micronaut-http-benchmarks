@@ -10,3 +10,5 @@ build/
 
 results.json
 pgo-data/
+*.jfr
+test-body-*.json
