@@ -49,12 +49,6 @@ tasks.withType<Jar>().configureEach {
     archiveBaseName.set(artifactName)
 }
 
-if (artifactName.contains("epoll-on") || artifactName.contains("tcnative-on")) {
-    tasks.withType<BuildNativeImageTask>().configureEach {
-        enabled = false
-    }
-}
-
 graalvmNative {
     toolchainDetection.set(false)
     binaries.all {

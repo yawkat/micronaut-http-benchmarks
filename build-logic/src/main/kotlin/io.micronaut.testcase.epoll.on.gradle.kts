@@ -1,3 +1,5 @@
+import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
+
 /**
  * This plugin activates epoll support for the Micronaut application.
  */
@@ -7,4 +9,8 @@ plugins {
 
 dependencies {
     runtimeOnly("io.netty:netty-transport-native-epoll::linux-x86_64")
+}
+
+tasks.withType<BuildNativeImageTask>().configureEach {
+    enabled = false
 }
