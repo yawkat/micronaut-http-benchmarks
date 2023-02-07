@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 import collections
 import json
-import textwrap
 
 import matplotlib.pyplot as plt
 
@@ -51,7 +50,7 @@ def parameter_label(parameters: RunParameters):
                 s.append(k)
         else:
             s.append(v)
-    return "\n".join(textwrap.wrap(" ".join(s), width=20))
+    return " ".join(s)
 
 
 plt.yticks(list(range(len(grouped_parameters))))

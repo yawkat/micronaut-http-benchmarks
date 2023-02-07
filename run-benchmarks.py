@@ -109,8 +109,7 @@ def random_string(length):
     return ''.join(random.choices(string.ascii_lowercase, k=length))
 
 
-def run_h2load(protocol: str, duration_per_test: int, body_size_parameter: int):
-    conn_per_s = 500
+def run_h2load(protocol: str, duration_per_test: int, conn_per_s: int, body_size_parameter: int):
     total_conns = conn_per_s * duration_per_test
     # could use a temp file, but this allows running the tests outside of this script
     body_file_name = f"test-body-{body_size_parameter}.json"
@@ -180,8 +179,8 @@ def benchmark(duration_per_test, parameters):
         print(BOLD + " ".join(server_cmd) + DEFAULT)
         server_proc = subprocess.Popen(server_cmd)
         try:
-            time.sleep(1 if params.native else 3)  # wait for startup
-            results[params] = run_h2load(params.protocol, duration_per_test, params.haystack_size)
+            time.sleep(1 if params.native else 4)  # wait for startup
+            results[params] = run_h2load(params.protocol, duration_per_test, 500, params.haystack_size)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -231,9 +230,10 @@ def prepare_pgo(duration_per_test, parameters):
         print(BOLD + " ".join(server_cmd) + DEFAULT)
         server_proc = subprocess.Popen(server_cmd)
         try:
+            time.sleep(1)  # wait for startup
             for protocol in DEFAULT_DIMENSIONS["protocol"]:
                 for haystack_size in DEFAULT_DIMENSIONS["haystack_size"]:
-                    run_h2load(protocol, duration_per_test, haystack_size)
+                    run_h2load(protocol, duration_per_test, 10, haystack_size)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -298,8 +298,6 @@ def main():
         dimensions["json"] = ["jackson"]
         dimensions["protocol"] = [DEFAULT_DIMENSIONS["protocol"][0]]
         duration_per_test = 10
-    if args.prepare_pgo:
-        duration_per_test = 2
     if args.duration_per_test is not None:
         duration_per_test = args.duration_per_test
 
