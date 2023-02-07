@@ -40,7 +40,7 @@ abstract class AppVariants(val settings: Settings) {
                         variantNames.forEach { variantName ->
                             java.sourceSets.all {
                                 this.java.srcDir("src/$name/variants/$variantName/java")
-                                this.java.srcDir("src/$name/variants/$variantName/java")
+                                this.resources.srcDir("src/$name/variants/$variantName/resources")
                             }
                         }
                     }
