@@ -9,6 +9,10 @@ repositories {
     }
 }
 
+dependencies {
+    runtimeOnly("org.yaml:snakeyaml")
+}
+
 micronaut {
     version("4.0.0-SNAPSHOT")
 }

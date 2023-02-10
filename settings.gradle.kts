@@ -25,7 +25,7 @@ configure<io.micronaut.bench.AppVariants> {
         }
         dimension("epoll") {
             variant("off")
-            variant("on")
+            //variant("on")
         }
         dimension("json") {
             variant("jackson")

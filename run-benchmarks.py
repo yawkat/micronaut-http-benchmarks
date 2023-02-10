@@ -16,9 +16,9 @@ DEFAULT_DIMENSIONS = {
     "protocol": ['http', 'https1', 'https2'],
     "native": [False, True],
     "tcnative": [False, True],
-    "epoll": [False, True],
+    "epoll": [False], # epoll has little impact
     "json": ["jackson"], # no serde for now
-    "micronaut": ["3.8"],
+    "micronaut": ["3.8", "4.0"],
     "java": ["17"],
     "haystack_size": [6, 1000, 100_000]
 }
@@ -146,6 +146,8 @@ def run_h2load(protocol: str, duration_per_test: int, conn_per_s: int, body_size
             tfc = parse_h2load_metric(line)
         elif line.startswith("time to 1st byte:"):
             ttfb = parse_h2load_metric(line)
+    if not tfr or not tfc or not ttfb:
+        raise Exception("No h2load result")
     return H2loadResult(tfr, tfc, ttfb)
 
 
@@ -180,7 +182,8 @@ def benchmark(duration_per_test, parameters):
         server_proc = subprocess.Popen(server_cmd)
         try:
             time.sleep(1 if params.native else 4)  # wait for startup
-            results[params] = run_h2load(params.protocol, duration_per_test, 500, params.haystack_size)
+            run_h2load(params.protocol, 10, 10, params.haystack_size) # warmup
+            results[params] = run_h2load(params.protocol, duration_per_test, 10, params.haystack_size)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -288,7 +291,7 @@ def main():
     parser.add_argument("--verify-features", help="Verify that the right features are supported by the artifacts", action='store_true')
     args = parser.parse_args()
 
-    duration_per_test = 30
+    duration_per_test = 60
 
     dimensions = dict(DEFAULT_DIMENSIONS)
     if args.test_run:
