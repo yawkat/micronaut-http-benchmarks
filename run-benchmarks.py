@@ -7,11 +7,18 @@ import os
 import random
 import string
 import subprocess
+import tempfile
 import time
 
 import requests
 
 pgo_data_dir = "pgo-data"
+
+LOAD_MODE_HANDSHAKE = "handshake"
+LOAD_MODE_REQUEST = "request"
+
+HaystackSize = collections.namedtuple("HaystackSize", ("count", "length"))
+
 DEFAULT_DIMENSIONS = {
     "protocol": ['http', 'https1', 'https2'],
     "native": [False, True],
@@ -20,8 +27,11 @@ DEFAULT_DIMENSIONS = {
     "json": ["jackson"], # no serde for now
     "micronaut": ["3.8", "4.0"],
     "java": ["17"],
-    "haystack_size": [6, 1000, 100_000]
+    "haystack_size": [HaystackSize(6, 6), HaystackSize(6, 1000), HaystackSize(6, 100_000), HaystackSize(1000, 6), HaystackSize(100_000, 6)],
+    "load_mode": [LOAD_MODE_REQUEST]
 }
+COMMON_DIMENSIONS = ("protocol", "haystack_size", "load_mode", "native")
+COMMAND_DIMENSIONS = ("tcnative", "epoll", "json", "micronaut", "java")
 
 RunParameters = collections.namedtuple("RunParameters", DEFAULT_DIMENSIONS.keys())
 GatlingResult = collections.namedtuple("GatlingResult", ("ko", "ok_times"))
@@ -102,20 +112,20 @@ def parse_h2load_metric(line: str):
     )
 
 
-H2loadResult = collections.namedtuple("H2loadResult", ("time_for_request", "time_for_connect", "time_to_1st_byte"))
+H2loadResultAggregate = collections.namedtuple("H2loadResultAggregate", ("time_for_request", "time_for_connect", "time_to_1st_byte"))
+H2loadResultIndividual = collections.namedtuple("H2loadResultIndividual", ("times_for_requests",))
 
 
 def random_string(length):
     return ''.join(random.choices(string.ascii_lowercase, k=length))
 
 
-def run_h2load(protocol: str, duration_per_test: int, conn_per_s: int, body_size_parameter: int):
-    total_conns = conn_per_s * duration_per_test
+def run_h2load(params: RunParameters, duration_per_test: int, _warmup: bool = True):
     # could use a temp file, but this allows running the tests outside of this script
-    body_file_name = f"test-body-{body_size_parameter}.json"
+    body_file_name = f"test-body-{params.haystack_size.count}-{params.haystack_size.length}.json"
     with open(body_file_name, mode="w") as body_file:
-        haystack = [random_string(body_size_parameter) for _ in range(6)]
-        offset = random.randrange(0, body_size_parameter - 3)
+        haystack = [random_string(params.haystack_size.length) for _ in range(params.haystack_size.count)]
+        offset = random.randrange(0, params.haystack_size.length - 3)
         json.dump({
             "haystack": haystack,
             "needle": random.choice(haystack)[offset:offset + 3]
@@ -124,31 +134,56 @@ def run_h2load(protocol: str, duration_per_test: int, conn_per_s: int, body_size
     cmd = [
         "h2load",
         "--no-tls-proto=http/1.1",  # for http, always use http/1.1
-        "--npn-list=" + ('http/1.1' if protocol == 'https1' else 'h2'), # for https, set the right protocol
+        "--npn-list=" + ('http/1.1' if params.protocol == 'https1' else 'h2'), # for https, set the right protocol
         "-d", body_file.name,
-        "-H", "Content-Type: application/json",
-        f"--clients={total_conns}",
-        f"--requests={total_conns}",
-        f"--rate={conn_per_s}",
-        "--threads=8",
-        ("http://localhost:8080" if protocol == "http" else "https://localhost:8443") + "/search/find"
+        "-H", "Content-Type: application/json"
     ]
-    print(BOLD + " ".join(cmd) + DEFAULT)
-    output = subprocess.run(cmd, check=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
-    print(output)
-    tfr = None
-    tfc = None
-    ttfb = None
-    for line in output.split("\n"):
-        if line.startswith("time for request:"):
-            tfr = parse_h2load_metric(line)
-        elif line.startswith("time for connect:"):
-            tfc = parse_h2load_metric(line)
-        elif line.startswith("time to 1st byte:"):
-            ttfb = parse_h2load_metric(line)
-    if not tfr or not tfc or not ttfb:
-        raise Exception("No h2load result")
-    return H2loadResult(tfr, tfc, ttfb)
+    uri = ("http://localhost:8080" if params.protocol == "http" else "https://localhost:8443") + "/search/find"
+    if params.load_mode == LOAD_MODE_HANDSHAKE:
+        if _warmup:
+            run_h2load(params, 10, _warmup=False)
+        conn_per_s = 10
+        total_conns = conn_per_s * duration_per_test
+        cmd += [
+            f"--clients={total_conns}",
+            f"--requests={total_conns}",
+            f"--rate={conn_per_s}",
+            "--threads=8",
+            uri,
+        ]
+        print(BOLD + " ".join(cmd) + DEFAULT)
+        output = subprocess.run(cmd, check=True, stdout=subprocess.PIPE).stdout.decode("utf-8")
+        print(output)
+        tfr = None
+        tfc = None
+        ttfb = None
+        for line in output.split("\n"):
+            if line.startswith("time for request:"):
+                tfr = parse_h2load_metric(line)
+            elif line.startswith("time for connect:"):
+                tfc = parse_h2load_metric(line)
+            elif line.startswith("time to 1st byte:"):
+                ttfb = parse_h2load_metric(line)
+        if not tfr or not tfc or not ttfb:
+            raise Exception("No h2load result")
+        return H2loadResultAggregate(tfr, tfc, ttfb)
+    elif params.load_mode == LOAD_MODE_REQUEST:
+        with tempfile.NamedTemporaryFile(mode="r") as log:
+            cmd += [
+                f"--duration={duration_per_test}",
+                f"--warm-up-time={duration_per_test//2}",
+                "--clients=8",
+                "--threads=8",
+                f"--log-file={log.name}",
+                uri,
+            ]
+            print(BOLD + " ".join(cmd) + DEFAULT)
+            subprocess.run(cmd, check=True)
+            times = []
+            for line in log:
+                (start, status, duration) = line.split("\t")
+                times.append(int(duration.strip()) * 1000)  # µs -> ns
+            return H2loadResultIndividual(times)
 
 
 def build_server_command(params: RunParameters):
@@ -163,7 +198,7 @@ def build_combination_string(params):
     combination_string = "-".join([
         k + "-" + (params[i] if type(params[i]) is str else ("on" if params[i] else "off"))
         for i, k in enumerate(DEFAULT_DIMENSIONS.keys())
-        if k not in ("native", "protocol", "haystack_size")
+        if k in COMMAND_DIMENSIONS
     ])
     return combination_string
 
@@ -182,8 +217,7 @@ def benchmark(duration_per_test, parameters):
         server_proc = subprocess.Popen(server_cmd)
         try:
             time.sleep(1 if params.native else 4)  # wait for startup
-            run_h2load(params.protocol, 10, 10, params.haystack_size) # warmup
-            results[params] = run_h2load(params.protocol, duration_per_test, 10, params.haystack_size)
+            results[params] = run_h2load(params, duration_per_test)
         finally:
             server_proc.terminate()
             server_proc.wait()
@@ -211,7 +245,7 @@ def benchmark(duration_per_test, parameters):
                 max(result.ok_times),
                 sum(result.ok_times) / len(result.ok_times)
             )
-        elif type(result) is H2loadResult:
+        elif type(result) is H2loadResultAggregate:
             print(
                 param,
                 f"{result.time_to_1st_byte.mean / 1000000}ms"
@@ -236,7 +270,10 @@ def prepare_pgo(duration_per_test, parameters):
             time.sleep(1)  # wait for startup
             for protocol in DEFAULT_DIMENSIONS["protocol"]:
                 for haystack_size in DEFAULT_DIMENSIONS["haystack_size"]:
-                    run_h2load(protocol, duration_per_test, 10, haystack_size)
+                    pd = params._asdict()
+                    pd["protocol"] = protocol
+                    pd["haystack_size"] = haystack_size
+                    run_h2load(RunParameters(**pd), duration_per_test)
         finally:
             server_proc.terminate()
             server_proc.wait()
