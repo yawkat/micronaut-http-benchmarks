@@ -29,7 +29,7 @@ public class LoadManager {
         return loadConfiguration.documents.stream()
                 .flatMap(doc -> {
                     byte[] testBody = createTestBody(doc);
-                    return loadConfiguration.protocols.stream().map(prot -> new LoadVariant(loadName(prot, doc), prot, testBody));
+                    return loadConfiguration.protocols.stream().map(prot -> new LoadVariant(loadName(prot, doc), prot, doc.stringCount, doc.stringLength, testBody));
                 })
                 .toList();
     }
