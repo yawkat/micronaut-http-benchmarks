@@ -9,7 +9,7 @@ private-key-location="/home/yawkat/.ssh/id_rsa"
 [suite]
 # the compartment to run the benchmark suite in. the compartment should be empty; it will be cleared before and after each run.
 compartment="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
-availability-domain="hkYI:PHX-AD-1"
+availability-domain="hkYI:PHX-AD-3"
 batch-size=8
 
 # configuration for the benchmark load. applies to all frameworks.
@@ -57,8 +57,10 @@ memory-in-gb=4
 
 # hyperfoil agent
 [compute.instance-types.hyperfoil-agent]
-ocpus=2
-memory-in-gb=4
+# this shape is technically past the "end of orderability date", but there are higher service limits for it
+shape="VM.Standard1.1"
+ocpus=1
+memory-in-gb=7
 
 # micronaut variant configuration
 [variants.micronaut]
