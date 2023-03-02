@@ -17,6 +17,7 @@ import org.apache.sshd.common.SshException;
 import org.apache.sshd.common.config.keys.loader.pem.RSAPEMResourceKeyPairParser;
 import org.apache.sshd.common.config.keys.writer.openssh.OpenSSHKeyPairResourceWriter;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
+import org.apache.sshd.core.CoreModuleProperties;
 import org.apache.sshd.scp.client.ScpClient;
 import org.apache.sshd.scp.client.ScpClientCreator;
 import org.apache.sshd.scp.common.helpers.ScpTimestampCommandDetails;
@@ -50,7 +51,7 @@ public class SshFactory {
             keyGen.initialize(2048);
             keyPair = keyGen.generateKeyPair();
         } else {
-            LOG.warn("Using static private key from {}. This private key will be uploaded to the hyperfoil agent, so make sure this key is not valuable!", config.privateKeyLocation);
+            LOG.warn("Using static private key from {}. This private key will be uploaded to the hyperfoil controller, so make sure this key is not valuable!", config.privateKeyLocation);
             keyPair = RSAPEMResourceKeyPairParser.INSTANCE.loadKeyPairs(null, null, null, Files.readAllLines(config.getPrivateKeyLocation())).iterator().next();
         }
         ByteArrayOutputStream publicStream = new ByteArrayOutputStream();
@@ -64,6 +65,7 @@ public class SshFactory {
                 .serverKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE)
                 .hostConfigEntryResolver(HostConfigEntryResolver.EMPTY)
                 .build();
+        CoreModuleProperties.SOCKET_KEEPALIVE.set(sshClient, true);
         sshClient.setKeyIdentityProvider(KeyIdentityProvider.wrapKeyPairs(keyPair));
         sshClient.start();
 

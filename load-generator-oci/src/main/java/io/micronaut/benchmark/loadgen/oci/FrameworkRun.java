@@ -2,6 +2,8 @@ package io.micronaut.benchmark.loadgen.oci;
 
 import org.apache.sshd.client.session.ClientSession;
 
+import java.util.function.Consumer;
+
 public interface FrameworkRun {
     String type();
 
@@ -12,8 +14,8 @@ public interface FrameworkRun {
     void setupAndRun(
             ClientSession benchmarkServerClient,
             OutputListener.Write log,
-            BenchmarkClosure benchmarkClosure
-    ) throws Exception;
+            BenchmarkClosure benchmarkClosure,
+            Consumer<BenchmarkPhase> progress) throws Exception;
 
     interface BenchmarkClosure {
         void benchmark() throws Exception;

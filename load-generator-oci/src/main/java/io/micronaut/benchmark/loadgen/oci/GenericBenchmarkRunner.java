@@ -40,6 +40,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -76,27 +77,7 @@ public class GenericBenchmarkRunner {
         }
 
         progress.accept(BenchmarkPhase.CREATING_VCN);
-        Vcn vcn;
-        while (true) {
-            try {
-                Throttle.VCN.take();
-                vcn = vcnClient.createVcn(CreateVcnRequest.builder()
-                        .createVcnDetails(CreateVcnDetails.builder()
-                                .compartmentId(location.compartmentId())
-                                .displayName("Benchmark network")
-                                .cidrBlock(NETWORK)
-                                .build())
-                        .build()).getVcn();
-                break;
-            } catch (BmcException be) {
-                if (be.getStatusCode() == 400 && "LimitExceeded".equals(be.getServiceCode())) {
-                    LOG.warn("Hit limit in CreateVcn operation. Likely you need to up your vcn-count limit. Waiting for 2m.");
-                    TimeUnit.MINUTES.sleep(2);
-                    continue;
-                }
-                throw be;
-            }
-        }
+        Vcn vcn = createVcn(location);
         progress.accept(BenchmarkPhase.SETTING_UP_NETWORK);
         String vcnId = vcn.getId();
         Throttle.VCN.take();
@@ -166,9 +147,9 @@ public class GenericBenchmarkRunner {
                 .build()).getSubnet().getId();
 
         Throttle.VCN.take();
-        SecurityList securityList = vcnClient.getSecurityList(GetSecurityListRequest.builder()
+        SecurityList securityList = retry(() -> vcnClient.getSecurityList(GetSecurityListRequest.builder()
                 .securityListId(vcn.getDefaultSecurityListId())
-                .build()).getSecurityList();
+                .build()).getSecurityList());
         List<IngressSecurityRule> ingressRules = new ArrayList<>(securityList.getIngressSecurityRules());
         // allow all internal traffic
         ingressRules.add(IngressSecurityRule.builder()
@@ -177,13 +158,16 @@ public class GenericBenchmarkRunner {
                 .protocol("all")
                 .isStateless(true)
                 .build());
-        Throttle.VCN.take();
-        vcnClient.updateSecurityList(UpdateSecurityListRequest.builder()
-                .securityListId(vcn.getDefaultSecurityListId())
-                .updateSecurityListDetails(UpdateSecurityListDetails.builder()
-                        .ingressSecurityRules(ingressRules)
-                        .build())
-                .build());
+        retry(() -> {
+            Throttle.VCN.take();
+            vcnClient.updateSecurityList(UpdateSecurityListRequest.builder()
+                    .securityListId(vcn.getDefaultSecurityListId())
+                    .updateSecurityListDetails(UpdateSecurityListDetails.builder()
+                            .ingressSecurityRules(ingressRules)
+                            .build())
+                    .build());
+            return null;
+        });
 
         progress.accept(BenchmarkPhase.SETTING_UP_INSTANCES);
         try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
@@ -201,16 +185,16 @@ public class GenericBenchmarkRunner {
             try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
                  OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
 
-                progress.accept(BenchmarkPhase.DEPLOYING);
+                progress.accept(BenchmarkPhase.DEPLOYING_OS);
                 LOG.info("Updating benchmark server");
                 openFirewallPorts(benchmarkServerClient, log);
-                run(benchmarkServerClient, "sudo yum update -y", log);
+                // this takes too long
+                //run(benchmarkServerClient, "sudo yum update -y", log);
 
                 run.setupAndRun(
                         benchmarkServerClient,
                         log,
                         () -> {
-                            progress.accept(BenchmarkPhase.BENCHMARKING);
                             try (ClientSession relayClient = sshFactory.connect(null, relayServer.publicIp, null)) {
                                 switch (loadVariant.protocol()) {
                                     case HTTP1 ->
@@ -223,7 +207,8 @@ public class GenericBenchmarkRunner {
                             }
 
                             hyperfoilRunner.benchmark(loadVariant.protocol(), loadVariant.body());
-                        }
+                        },
+                        progress
                 );
                 progress.accept(BenchmarkPhase.SHUTTING_DOWN);
             }
@@ -250,6 +235,48 @@ public class GenericBenchmarkRunner {
         Throttle.VCN.takeUninterruptibly();
         vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
         progress.accept(BenchmarkPhase.DONE);
+    }
+
+    private Vcn createVcn(OciLocation location) throws InterruptedException {
+        Vcn vcn;
+        while (true) {
+            try {
+                Throttle.VCN.take();
+                vcn = vcnClient.createVcn(CreateVcnRequest.builder()
+                        .createVcnDetails(CreateVcnDetails.builder()
+                                .compartmentId(location.compartmentId())
+                                .displayName("Benchmark network")
+                                .cidrBlock(NETWORK)
+                                .build())
+                        .build()).getVcn();
+                break;
+            } catch (BmcException be) {
+                if (be.getStatusCode() == 400 && "LimitExceeded".equals(be.getServiceCode())) {
+                    LOG.warn("Hit limit in CreateVcn operation. Likely you need to up your vcn-count limit. Waiting for 2m.");
+                    TimeUnit.MINUTES.sleep(2);
+                    continue;
+                }
+                throw be;
+            }
+        }
+        return vcn;
+    }
+
+    static <T> T retry(Callable<T> callable) throws Exception {
+        Exception err = null;
+        for (int i = 0; i < 3; i++) {
+            try {
+                return callable.call();
+            } catch (Exception e) {
+                if (err == null) {
+                    err = e;
+                } else {
+                    err.addSuppressed(e);
+                }
+            }
+            TimeUnit.SECONDS.sleep(10);
+        }
+        throw err;
     }
 
     static void openFirewallPorts(ClientSession benchmarkServerClient, OutputListener... log) throws IOException {

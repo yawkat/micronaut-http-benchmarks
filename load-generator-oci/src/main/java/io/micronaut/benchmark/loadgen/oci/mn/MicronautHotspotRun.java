@@ -1,5 +1,6 @@
 package io.micronaut.benchmark.loadgen.oci.mn;
 
+import io.micronaut.benchmark.loadgen.oci.BenchmarkPhase;
 import io.micronaut.benchmark.loadgen.oci.FrameworkRun;
 import io.micronaut.benchmark.loadgen.oci.GenericBenchmarkRunner;
 import io.micronaut.benchmark.loadgen.oci.OutputListener;
@@ -14,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.function.Consumer;
 
 public class MicronautHotspotRun implements FrameworkRun {
     private static final Logger LOG = LoggerFactory.getLogger(MicronautHotspotRun.class);
@@ -61,9 +63,11 @@ public class MicronautHotspotRun implements FrameworkRun {
     public void setupAndRun(
             ClientSession benchmarkServerClient,
             OutputListener.Write log,
-            BenchmarkClosure benchmarkClosure
-    ) throws Exception {
+            BenchmarkClosure benchmarkClosure,
+            Consumer<BenchmarkPhase> progress) throws Exception {
+        progress.accept(BenchmarkPhase.INSTALLING_SOFTWARE);
         GenericBenchmarkRunner.run(benchmarkServerClient, "sudo yum install jdk-17-headless -y", log);
+        progress.accept(BenchmarkPhase.DEPLOYING_SERVER);
         ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                 .upload(shadowFile, SHADOW_JAR_LOCATION);
         LOG.info("Starting benchmark server (hotspot, micronaut)");
@@ -73,6 +77,7 @@ public class MicronautHotspotRun implements FrameworkRun {
             cmd.open().verify();
             waiter.awaitWithNextPattern(null);
 
+            progress.accept(BenchmarkPhase.BENCHMARKING);
             benchmarkClosure.benchmark();
         }
     }

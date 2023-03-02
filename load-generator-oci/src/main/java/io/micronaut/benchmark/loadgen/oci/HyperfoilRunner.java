@@ -56,6 +56,10 @@ public class HyperfoilRunner implements AutoCloseable {
     private Future<?> worker;
     private final List<Compute.Instance> computeInstances = new CopyOnWriteArrayList<>();
 
+    static {
+        System.setProperty("io.hyperfoil.cli.request.timeout", "120000");
+    }
+
     private HyperfoilRunner(Factory factory, Path outputDirectory) {
         this.factory = factory;
         this.outputDirectory = outputDirectory;
@@ -155,11 +159,19 @@ public class HyperfoilRunner implements AutoCloseable {
                     }
                 } finally {
                     LOG.info("Downloading agent logs…");
-                    for (String agent : client.agents()) {
-                        client.downloadLog(agent, null, 0, outputDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
+                    try {
+                        for (String agent : client.agents()) {
+                            client.downloadLog(agent, null, 0, outputDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
+                        }
+                    } catch (Exception e) {
+                        LOG.error("Failed to download agent logs", e);
                     }
                     for (Compute.Instance instance : computeInstances) {
-                        instance.terminateAsync();
+                        try {
+                            instance.terminateAsync();
+                        } catch (Exception e) {
+                            LOG.error("Failed to terminate hyperfoil instance", e);
+                        }
                     }
                 }
             } finally {
@@ -211,7 +223,7 @@ public class HyperfoilRunner implements AutoCloseable {
         Client.BenchmarkRef benchmarkRef = client.register(benchmark.build(), null);
         Client.RunRef runRef = benchmarkRef.start("run", Map.of());
         while (true) {
-            RequestStatisticsResponse recentStats = runRef.statsRecent();
+            RequestStatisticsResponse recentStats = GenericBenchmarkRunner.retry(runRef::statsRecent);
             if (recentStats.status.equals("TERMINATED")) {
                 break;
             }
@@ -223,7 +235,7 @@ public class HyperfoilRunner implements AutoCloseable {
             TimeUnit.SECONDS.sleep(5);
         }
         LOG.info("Benchmark complete, writing output");
-        Files.write(outputDirectory.resolve("output.json"), runRef.statsAll("json"));
+        Files.write(outputDirectory.resolve("output.json"), GenericBenchmarkRunner.retry(() -> runRef.statsAll("json")));
     }
 
     private static void prepareScenario(byte[] body, String ip, int port, ScenarioBuilder warmup) {
@@ -238,11 +250,14 @@ public class HyperfoilRunner implements AutoCloseable {
     }
 
     public void terminateAsync() {
-        worker.cancel(true);
+        if (worker != null) {
+            worker.cancel(true);
+        }
     }
 
     @Override
     public void close() throws Exception {
+        terminateAsync();
         terminate.get();
         for (Compute.Instance computeInstance : computeInstances) {
             computeInstance.close();
