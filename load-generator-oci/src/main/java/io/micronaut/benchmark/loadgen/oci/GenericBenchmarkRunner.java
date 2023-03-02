@@ -41,6 +41,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 @Singleton
 public class GenericBenchmarkRunner {
@@ -68,16 +69,17 @@ public class GenericBenchmarkRunner {
         this.sshFactory = sshFactory;
     }
 
-    public void run(Path outputDirectory, OciLocation location, FrameworkRun run, LoadVariant loadVariant) throws Exception {
+    public void run(Path outputDirectory, OciLocation location, FrameworkRun run, LoadVariant loadVariant, Consumer<BenchmarkPhase> progress) throws Exception {
         try {
             Files.createDirectories(outputDirectory);
         } catch (FileAlreadyExistsException ignored) {
         }
 
-        Throttle.VCN.take();
+        progress.accept(BenchmarkPhase.CREATING_VCN);
         Vcn vcn;
         while (true) {
             try {
+                Throttle.VCN.take();
                 vcn = vcnClient.createVcn(CreateVcnRequest.builder()
                         .createVcnDetails(CreateVcnDetails.builder()
                                 .compartmentId(location.compartmentId())
@@ -95,6 +97,7 @@ public class GenericBenchmarkRunner {
                 throw be;
             }
         }
+        progress.accept(BenchmarkPhase.SETTING_UP_NETWORK);
         String vcnId = vcn.getId();
         Throttle.VCN.take();
         String natId = vcnClient.createNatGateway(CreateNatGatewayRequest.builder()
@@ -182,6 +185,7 @@ public class GenericBenchmarkRunner {
                         .build())
                 .build());
 
+        progress.accept(BenchmarkPhase.SETTING_UP_INSTANCES);
         try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
                 .privateIp(SERVER_IP)
                 .launch();
@@ -197,6 +201,7 @@ public class GenericBenchmarkRunner {
             try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
                  OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
 
+                progress.accept(BenchmarkPhase.DEPLOYING);
                 LOG.info("Updating benchmark server");
                 openFirewallPorts(benchmarkServerClient, log);
                 run(benchmarkServerClient, "sudo yum update -y", log);
@@ -205,6 +210,7 @@ public class GenericBenchmarkRunner {
                         benchmarkServerClient,
                         log,
                         () -> {
+                            progress.accept(BenchmarkPhase.BENCHMARKING);
                             try (ClientSession relayClient = sshFactory.connect(null, relayServer.publicIp, null)) {
                                 switch (loadVariant.protocol()) {
                                     case HTTP1 ->
@@ -219,6 +225,7 @@ public class GenericBenchmarkRunner {
                             hyperfoilRunner.benchmark(loadVariant.protocol(), loadVariant.body());
                         }
                 );
+                progress.accept(BenchmarkPhase.SHUTTING_DOWN);
             }
 
             // terminate asynchronously. we will wait for termination in close()
@@ -242,6 +249,7 @@ public class GenericBenchmarkRunner {
         vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
         Throttle.VCN.takeUninterruptibly();
         vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
+        progress.accept(BenchmarkPhase.DONE);
     }
 
     static void openFirewallPorts(ClientSession benchmarkServerClient, OutputListener... log) throws IOException {

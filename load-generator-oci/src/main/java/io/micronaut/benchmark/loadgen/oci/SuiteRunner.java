@@ -50,14 +50,17 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Singleton
 public class SuiteRunner {
@@ -102,16 +105,20 @@ public class SuiteRunner {
         List<LoadVariant> loadVariants = loadManager.getLoadVariants();
         List<Callable<Void>> allTasks = new ArrayList<>();
         List<BenchmarkParameters> index = new ArrayList<>();
+        List<BenchmarkPhase> status = new CopyOnWriteArrayList<>();
         for (FrameworkRunSet framework : frameworks) {
             for (FrameworkRun run : framework.getRuns()) {
                 for (LoadVariant loadVariant : loadVariants) {
                     String name = run.name() + "-" + loadVariant.name();
                     index.add(new BenchmarkParameters(name, run.type(), run.parameters(), loadVariant));
+                    int i = status.size();
+                    status.add(BenchmarkPhase.BEFORE);
                     allTasks.add(() -> MdcTracker.withMdc(name, () -> {
                         // we could use a child compartment here, but compartments seem to be heavily throttled
                         try {
-                            benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant);
+                            benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, ph -> status.set(i, ph));
                         } catch (Exception e) {
+                            status.set(i, BenchmarkPhase.FAILED);
                             LOG.error("Failed to run benchmark", e);
                             executor.shutdownNow();
                         }
@@ -120,6 +127,16 @@ public class SuiteRunner {
                 }
             }
         }
+        Future<?> progressTask = executor.submit(() -> {
+            //noinspection InfiniteLoopStatement
+            while (true) {
+                LOG.info("Benchmark status: {}", status.stream()
+                        .collect(Collectors.groupingBy(ph -> ph, () -> new EnumMap<>(BenchmarkPhase.class), Collectors.counting()))
+                        .entrySet().stream()
+                        .map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(" ")));
+                TimeUnit.SECONDS.sleep(10);
+            }
+        });
         LOG.info("There are {} benchmarks to run", allTasks.size());
         Path newIndex = outputDir.resolve("index.new.json");
         objectMapper.writeValue(newIndex.toFile(), index);
@@ -131,6 +148,7 @@ public class SuiteRunner {
                 future.get();
             }
         }
+        progressTask.cancel(true);
         Files.move(newIndex, outputDir.resolve("index.json"), StandardCopyOption.REPLACE_EXISTING);
         LOG.info("All benchmarks complete");
     }
