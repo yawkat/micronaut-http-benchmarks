@@ -1,0 +1,77 @@
+[oci.client.retry]
+foo="bar"
+
+[ssh]
+# DO NOT use a valuable key here. It is uploaded to the hyperfoil controller for agent provisioning. If you don't need
+# this for debugging, simply leave this property unset, and a fresh generated key pair will be used.
+private-key-location="/home/yawkat/.ssh/id_rsa"
+
+[suite]
+# the compartment to run the benchmark suite in. the compartment should be empty; it will be cleared before and after each run.
+compartment="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
+availability-domain="hkYI:PHX-AD-1"
+batch-size=8
+
+# configuration for the benchmark load. applies to all frameworks.
+[load]
+# protocols to test
+protocols=["HTTP1", "HTTPS1", "HTTPS2"]
+# different json body sizes to test
+[[load.documents]]
+string-count=6
+string-length=6
+[[load.documents]]
+string-count=1000
+string-length=6
+[[load.documents]]
+string-count=100000
+string-length=6
+[[load.documents]]
+string-count=6
+string-length=1000
+[[load.documents]]
+string-count=6
+string-length=100000
+
+# configuration for the hyperfoil cluster
+[hyperfoil]
+agent-count=4
+warmup-duration="30s"
+benchmark-duration="2m"
+
+
+# configuration for the different compute instances for the benchmark
+
+# instance that the test server runs on
+[compute.instance-types.benchmark-server]
+
+# relay server used as an SSH gateway to other servers
+[compute.instance-types.relay-server]
+ocpus=1
+memory-in-gb=2
+
+# hyperfoil controller
+[compute.instance-types.hyperfoil-controller]
+ocpus=2
+memory-in-gb=4
+
+# hyperfoil agent
+[compute.instance-types.hyperfoil-agent]
+ocpus=2
+memory-in-gb=4
+
+# micronaut variant configuration
+[variants.micronaut]
+native=[false]
+[variants.micronaut.compile-variants]
+tcnative=[
+    "on",
+    #"off"
+]
+epoll=["off"]
+json=["jackson"]
+micronaut=[
+    "3.8",
+    "4.0"
+]
+java=["17"]

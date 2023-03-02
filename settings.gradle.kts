@@ -15,6 +15,7 @@ plugins {
 
 rootProject.name = "micronaut-benchmark"
 
+include("load-generator-oci")
 include("load-generator-gatling")
 
 configure<io.micronaut.bench.AppVariants> {
