@@ -17,10 +17,16 @@ import com.oracle.bmc.core.requests.CreateNatGatewayRequest;
 import com.oracle.bmc.core.requests.CreateRouteTableRequest;
 import com.oracle.bmc.core.requests.CreateSubnetRequest;
 import com.oracle.bmc.core.requests.CreateVcnRequest;
+import com.oracle.bmc.core.requests.DeleteInternetGatewayRequest;
+import com.oracle.bmc.core.requests.DeleteNatGatewayRequest;
+import com.oracle.bmc.core.requests.DeleteRouteTableRequest;
+import com.oracle.bmc.core.requests.DeleteSubnetRequest;
+import com.oracle.bmc.core.requests.DeleteVcnRequest;
 import com.oracle.bmc.core.requests.GetSecurityListRequest;
 import com.oracle.bmc.core.requests.GetVnicRequest;
 import com.oracle.bmc.core.requests.ListVnicAttachmentsRequest;
 import com.oracle.bmc.core.requests.UpdateSecurityListRequest;
+import com.oracle.bmc.model.BmcException;
 import jakarta.inject.Singleton;
 import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.session.ClientSession;
@@ -34,6 +40,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Singleton
 public class GenericBenchmarkRunner {
@@ -68,13 +75,26 @@ public class GenericBenchmarkRunner {
         }
 
         Throttle.VCN.take();
-        Vcn vcn = vcnClient.createVcn(CreateVcnRequest.builder()
-                .createVcnDetails(CreateVcnDetails.builder()
-                        .compartmentId(location.compartmentId())
-                        .displayName("Benchmark network")
-                        .cidrBlock(NETWORK)
-                        .build())
-                .build()).getVcn();
+        Vcn vcn;
+        while (true) {
+            try {
+                vcn = vcnClient.createVcn(CreateVcnRequest.builder()
+                        .createVcnDetails(CreateVcnDetails.builder()
+                                .compartmentId(location.compartmentId())
+                                .displayName("Benchmark network")
+                                .cidrBlock(NETWORK)
+                                .build())
+                        .build()).getVcn();
+                break;
+            } catch (BmcException be) {
+                if (be.getStatusCode() == 400 && "LimitExceeded".equals(be.getServiceCode())) {
+                    LOG.warn("Hit limit in CreateVcn operation. Likely you need to up your vcn-count limit. Waiting for 2m.");
+                    TimeUnit.MINUTES.sleep(2);
+                    continue;
+                }
+                throw be;
+            }
+        }
         String vcnId = vcn.getId();
         Throttle.VCN.take();
         String natId = vcnClient.createNatGateway(CreateNatGatewayRequest.builder()
@@ -162,18 +182,18 @@ public class GenericBenchmarkRunner {
                         .build())
                 .build());
 
-        String benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
+        try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
                 .privateIp(SERVER_IP)
                 .launch();
+             HyperfoilRunner hyperfoilRunner = hyperfoilRunnerFactory.create(outputDirectory);
+             RelayServer relayServer = createRelayServer(location, publicSubnetId)) {
 
-        try (HyperfoilRunner hyperfoilRunner = hyperfoilRunnerFactory.create(outputDirectory)) {
             hyperfoilRunner.startAsync(location, privateSubnetId);
 
-            String relayServerIp = createRelayServer(location, publicSubnetId);
-            String relay = "opc@" + relayServerIp + ":22";
+            String relay = "opc@" + relayServer.publicIp + ":22";
             hyperfoilRunner.setRelay(relay);
 
-            compute.awaitStartup(benchmarkServer);
+            benchmarkServer.awaitStartup();
             try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
                  OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
 
@@ -185,11 +205,14 @@ public class GenericBenchmarkRunner {
                         benchmarkServerClient,
                         log,
                         () -> {
-                            try (ClientSession relayClient = sshFactory.connect(null, relayServerIp, null)) {
+                            try (ClientSession relayClient = sshFactory.connect(null, relayServer.publicIp, null)) {
                                 switch (loadVariant.protocol()) {
-                                    case HTTP1 -> run(relayClient, "curl --http1.1 http://" + SERVER_IP + ":8080/status", log);
-                                    case HTTPS1 -> run(relayClient, "curl --http1.1 -k https://" + SERVER_IP + ":8443/status", log);
-                                    case HTTPS2 -> run(relayClient, "curl --http2 -k https://" + SERVER_IP + ":8443/status", log);
+                                    case HTTP1 ->
+                                            run(relayClient, "curl --http1.1 http://" + SERVER_IP + ":8080/status", log);
+                                    case HTTPS1 ->
+                                            run(relayClient, "curl --http1.1 -k https://" + SERVER_IP + ":8443/status", log);
+                                    case HTTPS2 ->
+                                            run(relayClient, "curl --http2 -k https://" + SERVER_IP + ":8443/status", log);
                                 }
                             }
 
@@ -197,7 +220,28 @@ public class GenericBenchmarkRunner {
                         }
                 );
             }
+
+            // terminate asynchronously. we will wait for termination in close()
+            hyperfoilRunner.terminateAsync();
+            relayServer.instance.terminateAsync();
+            benchmarkServer.terminateAsync();
         }
+
+        LOG.info("Terminating network resources");
+        for (String subnet : new String[]{privateSubnetId, publicSubnetId}) {
+            Throttle.VCN.takeUninterruptibly();
+            vcnClient.deleteSubnet(DeleteSubnetRequest.builder().subnetId(subnet).build());
+        }
+        for (String routeTable : new String[]{privateRouteTable, publicRouteTable}) {
+            Throttle.VCN.takeUninterruptibly();
+            vcnClient.deleteRouteTable(DeleteRouteTableRequest.builder().rtId(routeTable).build());
+        }
+        Throttle.VCN.takeUninterruptibly();
+        vcnClient.deleteInternetGateway(DeleteInternetGatewayRequest.builder().igId(internetId).build());
+        Throttle.VCN.takeUninterruptibly();
+        vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
+        Throttle.VCN.takeUninterruptibly();
+        vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
     }
 
     static void openFirewallPorts(ClientSession benchmarkServerClient, OutputListener... log) throws IOException {
@@ -239,22 +283,33 @@ public class GenericBenchmarkRunner {
         command.setErr(stream);
     }
 
-    private String createRelayServer(OciLocation location, String subnetId) throws InterruptedException {
+    private RelayServer createRelayServer(OciLocation location, String subnetId) throws InterruptedException {
         LOG.info("Creating relay server");
-        String relayServerInstance = compute.builder("relay-server", location, subnetId)
+        Compute.Instance relayServerInstance = compute.builder("relay-server", location, subnetId)
                 .publicIp(true)
                 .launch();
 
-        compute.awaitStartup(relayServerInstance);
+        relayServerInstance.awaitStartup();
 
         Throttle.COMPUTE.take();
         String vnic = computeClient.listVnicAttachments(ListVnicAttachmentsRequest.builder()
                 .compartmentId(location.compartmentId())
                 .availabilityDomain(location.availabilityDomain())
-                .instanceId(relayServerInstance)
+                .instanceId(relayServerInstance.id)
                 .build()).getItems().get(0).getVnicId();
-        return vcnClient.getVnic(GetVnicRequest.builder()
+        String publicIp = vcnClient.getVnic(GetVnicRequest.builder()
                 .vnicId(vnic)
                 .build()).getVnic().getPublicIp();
+        return new RelayServer(relayServerInstance, publicIp);
+    }
+
+    private record RelayServer(
+            Compute.Instance instance,
+            String publicIp
+    ) implements AutoCloseable {
+        @Override
+        public void close() throws Exception {
+            instance.close();
+        }
     }
 }

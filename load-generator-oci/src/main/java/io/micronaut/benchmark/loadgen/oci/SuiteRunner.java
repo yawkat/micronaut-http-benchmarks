@@ -21,7 +21,6 @@ import com.oracle.bmc.core.requests.ListNatGatewaysRequest;
 import com.oracle.bmc.core.requests.ListRouteTablesRequest;
 import com.oracle.bmc.core.requests.ListSubnetsRequest;
 import com.oracle.bmc.core.requests.ListVcnsRequest;
-import com.oracle.bmc.core.requests.TerminateInstanceRequest;
 import com.oracle.bmc.core.requests.UpdateRouteTableRequest;
 import com.oracle.bmc.core.responses.ListInstancesResponse;
 import com.oracle.bmc.core.responses.ListInternetGatewaysResponse;
@@ -73,6 +72,7 @@ public class SuiteRunner {
     private final ExecutorService executor;
     private final SuiteConfiguration suiteConfiguration;
     private final ObjectMapper objectMapper;
+    private final Compute compute;
 
     public SuiteRunner(IdentityClient identityClient,
                        ComputeClient computeClient,
@@ -82,7 +82,7 @@ public class SuiteRunner {
                        List<FrameworkRunSet> frameworks,
                        @Named(TaskExecutors.IO) ExecutorService executor,
                        SuiteConfiguration suiteConfiguration,
-                       ObjectMapper objectMapper) {
+                       ObjectMapper objectMapper, Compute compute) {
         this.identityClient = identityClient;
         this.computeClient = computeClient;
         this.vcnClient = vcnClient;
@@ -92,6 +92,7 @@ public class SuiteRunner {
         this.executor = executor;
         this.suiteConfiguration = suiteConfiguration;
         this.objectMapper = objectMapper;
+        this.compute = compute;
     }
 
     public void run() throws Exception {
@@ -112,29 +113,22 @@ public class SuiteRunner {
                             benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant);
                         } catch (Exception e) {
                             LOG.error("Failed to run benchmark", e);
+                            executor.shutdownNow();
                         }
                         return null;
                     }));
                 }
             }
         }
-        List<List<Callable<Void>>> batches = new ArrayList<>();
-        for (int i = 0; i < allTasks.size(); i += suiteConfiguration.batchSize) {
-            batches.add(allTasks.subList(i, Math.min(i + suiteConfiguration.batchSize, allTasks.size())));
-        }
-        LOG.info("There are {} benchmarks to run, in {} batches", allTasks.size(), batches.size());
+        LOG.info("There are {} benchmarks to run", allTasks.size());
         Path newIndex = outputDir.resolve("index.new.json");
         objectMapper.writeValue(newIndex.toFile(), index);
-        for (int i = 0; i < batches.size(); i++) {
-            List<Callable<Void>> batch = batches.get(i);
-            // use try-with-resources to clean the compartment after each batch
-            try (CloseableCompartment ignored = new CloseableCompartment(suiteConfiguration.compartment, false)) {
-                List<Future<Void>> futures = executor.invokeAll(batch);
-                for (Future<Void> future : futures) {
-                    // any remaining errors
-                    future.get();
-                }
-                LOG.info("Batch {} complete, cleaning for next batch", i + 1);
+        // use try-with-resources to clean the compartment
+        try (CloseableCompartment ignored = new CloseableCompartment(suiteConfiguration.compartment, false)) {
+            List<Future<Void>> futures = executor.invokeAll(allTasks);
+            for (Future<Void> future : futures) {
+                // any remaining errors
+                future.get();
             }
         }
         Files.move(newIndex, outputDir.resolve("index.json"), StandardCopyOption.REPLACE_EXISTING);
@@ -186,7 +180,8 @@ public class SuiteRunner {
         )) {
             Instance.LifecycleState lifecycleState = instance.getLifecycleState();
             if (lifecycleState != Instance.LifecycleState.Terminated && lifecycleState != Instance.LifecycleState.Terminating) {
-                terminate(instance);
+                //noinspection resource
+                compute.new Instance(instance.getId()).terminateAsync();
             }
         }
 
@@ -358,31 +353,6 @@ public class SuiteRunner {
             }
         }
         return result;
-    }
-
-    private void terminate(Instance instance) {
-        LOG.info("Terminating compute instance {}", instance.getDisplayName());
-        while (true) {
-            Throttle.COMPUTE.takeUninterruptibly();
-            try {
-                computeClient.terminateInstance(TerminateInstanceRequest.builder()
-                        .instanceId(instance.getId())
-                        .preserveBootVolume(false)
-                        .build());
-                break;
-            } catch (BmcException bmce) {
-                if (bmce.getStatusCode() == 429) {
-                    LOG.info("429 while terminating compute instance {}, retrying in 30s", instance.getDisplayName());
-                    try {
-                        TimeUnit.SECONDS.sleep(30);
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                    continue;
-                }
-                throw bmce;
-            }
-        }
     }
 
     private final class CloseableCompartment implements AutoCloseable {

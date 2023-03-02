@@ -1,6 +1,5 @@
 package io.micronaut.benchmark.loadgen.oci;
 
-import io.micronaut.context.BeanProvider;
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.core.annotation.Nullable;
@@ -43,10 +42,8 @@ public class SshFactory {
     private final String publicKey;
     private final String privateKey;
     private final SshClient sshClient;
-    private final BeanProvider<Compute> compute;
 
-    SshFactory(BeanProvider<Compute> compute, SshConfiguration config) throws Exception {
-        this.compute = compute;
+    SshFactory(SshConfiguration config) throws Exception {
         KeyPair keyPair;
         if (config.getPrivateKeyLocation() == null) {
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
@@ -94,7 +91,7 @@ public class SshFactory {
     }
 
     ClientSession connect(
-            String instanceId,
+            Compute.Instance instance,
             String instanceIp,
             @Nullable String relay
     ) throws Exception {
@@ -116,10 +113,10 @@ public class SshFactory {
                     }
                 }
             }
-            compute.get().checkStarted(instanceId);
+            instance.checkStarted();
             TimeUnit.SECONDS.sleep(1);
             if (attempts++ > 500) {
-                throw new IOException("Failed to connect to SSH server " + instanceId + " at " + instanceIp + " via " + relay);
+                throw new IOException("Failed to connect to SSH server " + instance + " at " + instanceIp + " via " + relay);
             }
         }
     }

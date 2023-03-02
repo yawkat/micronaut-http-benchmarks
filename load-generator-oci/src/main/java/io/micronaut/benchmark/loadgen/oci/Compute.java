@@ -3,13 +3,13 @@ package io.micronaut.benchmark.loadgen.oci;
 import com.oracle.bmc.core.ComputeClient;
 import com.oracle.bmc.core.model.CreateVnicDetails;
 import com.oracle.bmc.core.model.Image;
-import com.oracle.bmc.core.model.Instance;
 import com.oracle.bmc.core.model.LaunchInstanceDetails;
 import com.oracle.bmc.core.model.LaunchInstanceShapeConfigDetails;
 import com.oracle.bmc.core.model.LaunchOptions;
 import com.oracle.bmc.core.requests.GetInstanceRequest;
 import com.oracle.bmc.core.requests.LaunchInstanceRequest;
 import com.oracle.bmc.core.requests.ListImagesRequest;
+import com.oracle.bmc.core.requests.TerminateInstanceRequest;
 import com.oracle.bmc.model.BmcException;
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.context.annotation.EachProperty;
@@ -50,38 +50,6 @@ public class Compute {
         return new Launch(instanceType, computeConfiguration.instanceTypes.get(instanceType), location, subnetId);
     }
 
-    public void awaitStartup(String computeId) throws InterruptedException {
-        while (true) {
-            if (checkStarted(computeId)) {
-                return;
-            }
-            TimeUnit.SECONDS.sleep(5);
-        }
-    }
-
-    /**
-     * Check that the given instance is provisioning or started.
-     *
-     * @param computeId     The instance ID
-     * @return {@code true} if the instance is running, {@code false} if it is still being set up
-     * @throws IllegalStateException if the instance is shutting down
-     */
-    public boolean checkStarted(String computeId) {
-        Throttle.COMPUTE.takeUninterruptibly();
-        Instance instance = computeClient.getInstance(GetInstanceRequest.builder()
-                .instanceId(computeId)
-                .build()).getInstance();
-        switch (instance.getLifecycleState()) {
-            case Running -> {
-                return true;
-            }
-            case Provisioning, Starting ->
-                    LOG.info("Waiting for instance {} to start ({})...", computeId, instance.getLifecycleState());
-            default -> throw new IllegalStateException("Unexpected lifecycle state: " + instance.getLifecycleState());
-        }
-        return false;
-    }
-
     public class Launch {
         private final String displayName;
         private final ComputeConfiguration.InstanceType instanceType;
@@ -113,7 +81,7 @@ public class Compute {
             return this;
         }
 
-        public String launch() throws InterruptedException {
+        public Instance launch() throws InterruptedException {
             CreateVnicDetails.Builder vnicDetails = CreateVnicDetails.builder()
                     .subnetId(subnetId)
                     .assignPublicIp(publicIp);
@@ -128,7 +96,7 @@ public class Compute {
                     .orElseThrow(() -> new NoSuchElementException("Image not found. Available images are: " + images.stream().map(Image::getDisplayName).toList()));
             while (true) {
                 try {
-                    return computeClient.launchInstance(LaunchInstanceRequest.builder()
+                    String id = computeClient.launchInstance(LaunchInstanceRequest.builder()
                             .launchInstanceDetails(LaunchInstanceDetails.builder()
                                     .compartmentId(location.compartmentId())
                                     .availabilityDomain(location.availabilityDomain())
@@ -149,6 +117,7 @@ public class Compute {
                                             .build())
                                     .build())
                             .build()).getInstance().getId();
+                    return new Instance(id);
                 } catch (BmcException bmce) {
                     if (bmce.getStatusCode() == 429) {
                         LOG.info("429 while launching instance! Waiting 30s.");
@@ -156,6 +125,105 @@ public class Compute {
                         continue;
                     }
                     throw bmce;
+                }
+            }
+        }
+    }
+
+    public class Instance implements AutoCloseable {
+        final String id;
+
+        private boolean terminating = false;
+
+        Instance(String id) {
+            this.id = id;
+        }
+
+        /**
+         * Check that the given instance is provisioning or started.
+         *
+         * @return {@code true} if the instance is running, {@code false} if it is still being set up
+         * @throws IllegalStateException if the instance is shutting down
+         */
+        public boolean checkStarted() {
+            Throttle.COMPUTE.takeUninterruptibly();
+            com.oracle.bmc.core.model.Instance.LifecycleState lifecycleState = getLifecycleState();
+            switch (lifecycleState) {
+                case Running -> {
+                    return true;
+                }
+                case Provisioning, Starting ->
+                        LOG.info("Waiting for instance {} to start ({})...", id, lifecycleState);
+                default -> throw new IllegalStateException("Unexpected lifecycle state: " + lifecycleState);
+            }
+            return false;
+        }
+
+        private com.oracle.bmc.core.model.Instance.LifecycleState getLifecycleState() {
+            return computeClient.getInstance(GetInstanceRequest.builder()
+                    .instanceId(id)
+                    .build())
+                    .getInstance()
+                    .getLifecycleState();
+        }
+
+        public void awaitStartup() throws InterruptedException {
+            while (true) {
+                if (checkStarted()) {
+                    return;
+                }
+                TimeUnit.SECONDS.sleep(5);
+            }
+        }
+
+        public synchronized void terminateAsync() {
+            LOG.info("Terminating compute instance {}", id);
+            while (true) {
+                Throttle.COMPUTE.takeUninterruptibly();
+                try {
+                    computeClient.terminateInstance(TerminateInstanceRequest.builder()
+                            .instanceId(id)
+                            .preserveBootVolume(false)
+                            .build());
+                    break;
+                } catch (BmcException bmce) {
+                    if (bmce.getStatusCode() == 429) {
+                        LOG.info("429 while terminating compute instance {}, retrying in 30s", id);
+                        try {
+                            TimeUnit.SECONDS.sleep(30);
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                        continue;
+                    }
+                    throw bmce;
+                }
+            }
+            terminating = true;
+        }
+
+        @Override
+        public synchronized void close() {
+            if (!terminating) {
+                LOG.warn("Instance was not terminated before close() call");
+                terminateAsync();
+            }
+
+            while (true) {
+                Throttle.COMPUTE.takeUninterruptibly();
+                com.oracle.bmc.core.model.Instance.LifecycleState lifecycleState = getLifecycleState();
+                switch (lifecycleState) {
+                    case Terminating -> {}
+                    case Terminated -> {
+                        return;
+                    }
+                    default -> throw new IllegalStateException("Unexpected state for compute instance " + id + ": " + lifecycleState + ". Instance should be terminating.");
+                }
+                LOG.info("Waiting for {} to terminate", id);
+                try {
+                    TimeUnit.SECONDS.sleep(5);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
             }
         }

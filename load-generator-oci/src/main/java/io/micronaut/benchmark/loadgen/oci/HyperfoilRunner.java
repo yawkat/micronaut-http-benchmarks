@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -50,8 +51,10 @@ public class HyperfoilRunner implements AutoCloseable {
     private final Factory factory;
     private final CompletableFuture<String> relay = new CompletableFuture<>();
     private final CompletableFuture<Client> client = new CompletableFuture<>();
+    private final CompletableFuture<Void> terminate = new CompletableFuture<>();
     private final Path outputDirectory;
     private Future<?> worker;
+    private final List<Compute.Instance> computeInstances = new CopyOnWriteArrayList<>();
 
     private HyperfoilRunner(Factory factory, Path outputDirectory) {
         this.factory = factory;
@@ -65,23 +68,28 @@ public class HyperfoilRunner implements AutoCloseable {
             } catch (InterruptedException ignored) {
             } catch (Exception e) {
                 LOG.error("Failed to deploy hyperfoil server", e);
+            } finally {
+                terminate.complete(null);
             }
             return null;
         }));
     }
 
     private void deploy(OciLocation location, String privateSubnetId) throws Exception {
-        String hyperfoilController = factory.compute.builder("hyperfoil-controller", location, privateSubnetId)
+        Compute.Instance hyperfoilController = factory.compute.builder("hyperfoil-controller", location, privateSubnetId)
                 .privateIp(HYPERFOIL_CONTROLLER_IP)
                 .launch();
-        List<String> agents = new ArrayList<>();
+        computeInstances.add(hyperfoilController);
+        List<Compute.Instance> agents = new ArrayList<>();
         for (int i = 0; i < factory.config.agentCount; i++) {
-            agents.add(factory.compute.builder("hyperfoil-agent", location, privateSubnetId)
+            Compute.Instance instance = factory.compute.builder("hyperfoil-agent", location, privateSubnetId)
                     .privateIp(agentIp(i))
-                    .launch());
+                    .launch();
+            agents.add(instance);
+            computeInstances.add(instance);
         }
 
-        factory.compute.awaitStartup(hyperfoilController);
+        hyperfoilController.awaitStartup();
 
         String relay = this.relay.get();
 
@@ -95,8 +103,8 @@ public class HyperfoilRunner implements AutoCloseable {
             GenericBenchmarkRunner.openFirewallPorts(controllerSession);
 
             for (int i = 0; i < agents.size(); i++) {
-                String agent = agents.get(i);
-                factory.compute.awaitStartup(agent);
+                Compute.Instance agent = agents.get(i);
+                agent.awaitStartup();
 
                 try (ClientSession agentSession = factory.sshFactory.connect(agent, agentIp(i), relay)) {
                     GenericBenchmarkRunner.openFirewallPorts(agentSession);
@@ -144,6 +152,9 @@ public class HyperfoilRunner implements AutoCloseable {
                     LOG.info("Downloading agent logs…");
                     for (String agent : client.agents()) {
                         client.downloadLog(agent, null, 0, outputDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
+                    }
+                    for (Compute.Instance instance : computeInstances) {
+                        instance.terminateAsync();
                     }
                 }
             } finally {
@@ -221,10 +232,15 @@ public class HyperfoilRunner implements AutoCloseable {
                 .body(new ConstantBytesGenerator(body));
     }
 
+    public void terminateAsync() {
+        worker.cancel(true);
+    }
+
     @Override
-    public void close() {
-        if (worker != null) {
-            worker.cancel(true);
+    public void close() throws Exception {
+        terminate.get();
+        for (Compute.Instance computeInstance : computeInstances) {
+            computeInstance.close();
         }
     }
 
