@@ -61,10 +61,12 @@ public class HyperfoilRunner implements AutoCloseable {
         this.outputDirectory = outputDirectory;
     }
 
-    public void startAsync(OciLocation location, String privateSubnetId) {
+    public void startAsync(OciLocation location, String privateSubnetId) throws Exception {
+        // fail fast if we can't create the instances
+        HyperfoilInstances instances = createInstances(location, privateSubnetId);
         worker = factory.executor.submit(MdcTracker.copyMdc(() -> {
             try {
-                deploy(location, privateSubnetId);
+                deploy(instances);
             } catch (InterruptedException ignored) {
             } catch (Exception e) {
                 LOG.error("Failed to deploy hyperfoil server", e);
@@ -75,7 +77,7 @@ public class HyperfoilRunner implements AutoCloseable {
         }));
     }
 
-    private void deploy(OciLocation location, String privateSubnetId) throws Exception {
+    private HyperfoilInstances createInstances(OciLocation location, String privateSubnetId) throws Exception {
         Compute.Instance hyperfoilController = factory.compute.builder("hyperfoil-controller", location, privateSubnetId)
                 .privateIp(HYPERFOIL_CONTROLLER_IP)
                 .launch();
@@ -88,22 +90,25 @@ public class HyperfoilRunner implements AutoCloseable {
             agents.add(instance);
             computeInstances.add(instance);
         }
+        return new HyperfoilInstances(hyperfoilController, agents);
+    }
 
-        hyperfoilController.awaitStartup();
+    private void deploy(HyperfoilInstances instances) throws Exception {
+        instances.controller.awaitStartup();
 
         String relay = this.relay.get();
 
         try (
                 OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("hyperfoil.log")));
-                ClientSession controllerSession = factory.sshFactory.connect(hyperfoilController, HYPERFOIL_CONTROLLER_IP, relay)) {
+                ClientSession controllerSession = factory.sshFactory.connect(instances.controller, HYPERFOIL_CONTROLLER_IP, relay)) {
             GenericBenchmarkRunner.run(controllerSession, "sudo yum install jdk-17-headless -y", log);
             ScpClientCreator.instance().createScpClient(controllerSession).upload(LOCAL_HYPERFOIL_LOCATION, REMOTE_HYPERFOIL_LOCATION, ScpClient.Option.Recursive, ScpClient.Option.PreserveAttributes);
             factory.sshFactory.deployPrivateKey(controllerSession);
 
             GenericBenchmarkRunner.openFirewallPorts(controllerSession);
 
-            for (int i = 0; i < agents.size(); i++) {
-                Compute.Instance agent = agents.get(i);
+            for (int i = 0; i < instances.agents.size(); i++) {
+                Compute.Instance agent = instances.agents.get(i);
                 agent.awaitStartup();
 
                 try (ClientSession agentSession = factory.sshFactory.connect(agent, agentIp(i), relay)) {
@@ -297,4 +302,9 @@ public class HyperfoilRunner implements AutoCloseable {
             this.benchmarkDuration = benchmarkDuration;
         }
     }
+
+    private record HyperfoilInstances(
+            Compute.Instance controller,
+            List<Compute.Instance> agents
+    ) {}
 }
