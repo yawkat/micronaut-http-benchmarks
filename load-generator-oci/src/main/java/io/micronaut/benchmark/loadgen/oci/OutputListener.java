@@ -7,6 +7,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
 import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -86,6 +87,7 @@ public interface OutputListener {
         public void onData(ByteBuffer data) {
             try {
                 outputStream.write(data.array(), data.arrayOffset() + data.position(), data.remaining());
+            } catch (ClosedChannelException ignored) {
             } catch (IOException e) {
                 LOG.error("Failed to write data", e);
             }

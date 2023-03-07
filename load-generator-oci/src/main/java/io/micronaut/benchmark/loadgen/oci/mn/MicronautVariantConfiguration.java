@@ -17,12 +17,4 @@ public class MicronautVariantConfiguration {
     public void setCompileVariants(Map<String, List<String>> compileVariants) {
         this.compileVariants = compileVariants;
     }
-
-    public List<Boolean> getNative() {
-        return native_;
-    }
-
-    public void setNative(List<Boolean> native_) {
-        this.native_ = native_;
-    }
 }

@@ -27,6 +27,7 @@ import org.apache.sshd.scp.client.ScpClientCreator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InterruptedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -34,11 +35,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class HyperfoilRunner implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(HyperfoilRunner.class);
@@ -53,30 +56,28 @@ public class HyperfoilRunner implements AutoCloseable {
     private final CompletableFuture<Client> client = new CompletableFuture<>();
     private final CompletableFuture<Void> terminate = new CompletableFuture<>();
     private final Path outputDirectory;
-    private Future<?> worker;
+    private final HyperfoilInstances instances;
+    private final Future<?> worker;
     private final List<Compute.Instance> computeInstances = new CopyOnWriteArrayList<>();
 
     static {
         System.setProperty("io.hyperfoil.cli.request.timeout", "120000");
     }
 
-    private HyperfoilRunner(Factory factory, Path outputDirectory) {
+    private HyperfoilRunner(Factory factory, Path outputDirectory, OciLocation location, String privateSubnetId) throws Exception {
         this.factory = factory;
         this.outputDirectory = outputDirectory;
-    }
 
-    public void startAsync(OciLocation location, String privateSubnetId) throws Exception {
         // fail fast if we can't create the instances
-        HyperfoilInstances instances = createInstances(location, privateSubnetId);
+        instances = createInstances(location, privateSubnetId);
         worker = factory.executor.submit(MdcTracker.copyMdc(() -> {
-            try {
-                deploy(instances);
-            } catch (InterruptedException ignored) {
+            try (AutoCloseable ignored = this::terminateAndWait) {
+                deploy();
+            } catch (InterruptedException | InterruptedIOException ignored) {
             } catch (Exception e) {
                 LOG.error("Failed to deploy hyperfoil server", e);
-            } finally {
-                terminate.complete(null);
             }
+            terminate.complete(null);
             return null;
         }));
     }
@@ -85,19 +86,37 @@ public class HyperfoilRunner implements AutoCloseable {
         Compute.Instance hyperfoilController = factory.compute.builder("hyperfoil-controller", location, privateSubnetId)
                 .privateIp(HYPERFOIL_CONTROLLER_IP)
                 .launch();
-        computeInstances.add(hyperfoilController);
-        List<Compute.Instance> agents = new ArrayList<>();
-        for (int i = 0; i < factory.config.agentCount; i++) {
-            Compute.Instance instance = factory.compute.builder("hyperfoil-agent", location, privateSubnetId)
-                    .privateIp(agentIp(i))
-                    .launch();
-            agents.add(instance);
-            computeInstances.add(instance);
+        try {
+            computeInstances.add(hyperfoilController);
+            List<Compute.Instance> agents = new ArrayList<>();
+            for (int i = 0; i < factory.config.agentCount; i++) {
+                Compute.Instance instance = factory.compute.builder("hyperfoil-agent", location, privateSubnetId)
+                        .privateIp(agentIp(i))
+                        .launch();
+                agents.add(instance);
+                computeInstances.add(instance);
+            }
+            return new HyperfoilInstances(hyperfoilController, agents);
+        } catch (Exception e) {
+            try {
+                terminateAndWait();
+            } catch (Exception f) {
+                e.addSuppressed(f);
+            }
+            throw e;
         }
-        return new HyperfoilInstances(hyperfoilController, agents);
     }
 
-    private void deploy(HyperfoilInstances instances) throws Exception {
+    private void terminateAndWait() throws Exception {
+        for (Compute.Instance computeInstance : computeInstances) {
+            computeInstance.terminateAsync();
+        }
+        for (Compute.Instance computeInstance : computeInstances) {
+            computeInstance.close();
+        }
+    }
+
+    private void deploy() throws Exception {
         instances.controller.awaitStartup();
 
         String relay = this.relay.get();
@@ -105,22 +124,35 @@ public class HyperfoilRunner implements AutoCloseable {
         try (
                 OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("hyperfoil.log")));
                 ClientSession controllerSession = factory.sshFactory.connect(instances.controller, HYPERFOIL_CONTROLLER_IP, relay)) {
-            GenericBenchmarkRunner.run(controllerSession, "sudo yum install jdk-17-headless -y", log);
-            ScpClientCreator.instance().createScpClient(controllerSession).upload(LOCAL_HYPERFOIL_LOCATION, REMOTE_HYPERFOIL_LOCATION, ScpClient.Option.Recursive, ScpClient.Option.PreserveAttributes);
-            factory.sshFactory.deployPrivateKey(controllerSession);
 
-            GenericBenchmarkRunner.openFirewallPorts(controllerSession);
+            List<Callable<Void>> setupTasks = new ArrayList<>();
+
+            setupTasks.add(() -> {
+                SshUtil.run(controllerSession, "sudo yum install jdk-17-headless -y", log);
+                ScpClientCreator.instance().createScpClient(controllerSession).upload(LOCAL_HYPERFOIL_LOCATION, REMOTE_HYPERFOIL_LOCATION, ScpClient.Option.Recursive, ScpClient.Option.PreserveAttributes);
+                factory.sshFactory.deployPrivateKey(controllerSession);
+
+                SshUtil.openFirewallPorts(controllerSession);
+                return null;
+            });
 
             for (int i = 0; i < instances.agents.size(); i++) {
                 Compute.Instance agent = instances.agents.get(i);
-                agent.awaitStartup();
 
-                try (ClientSession agentSession = factory.sshFactory.connect(agent, agentIp(i), relay)) {
-                    GenericBenchmarkRunner.openFirewallPorts(agentSession);
-                    GenericBenchmarkRunner.run(agentSession, "sudo yum install jdk-17-headless -y", log);
-                }
+                String agentIp = agentIp(i);
+                setupTasks.add(() -> {
+                    agent.awaitStartup();
+                    try (ClientSession agentSession = factory.sshFactory.connect(agent, agentIp, relay)) {
+                        SshUtil.openFirewallPorts(agentSession);
+                        SshUtil.run(agentSession, "sudo yum install jdk-17-headless -y", log);
+                    }
+                    return null;
+                });
             }
 
+            for (Future<?> f : factory.executor.invokeAll(setupTasks)) {
+                f.get();
+            }
 
             try (ChannelExec controllerCommand = controllerSession.createExecChannel(REMOTE_HYPERFOIL_LOCATION + "/bin/controller.sh");
                  PortForwardingTracker controllerPortForward = controllerSession.createLocalPortForwardingTracker(new SshdSocketAddress("localhost", 0), new SshdSocketAddress("localhost", 8090));
@@ -129,7 +161,7 @@ public class HyperfoilRunner implements AutoCloseable {
                          controllerPortForward.getBoundAddress().getHostName(),
                          controllerPortForward.getBoundAddress().getPort(),
                          false, true, null)) {
-                GenericBenchmarkRunner.forwardOutput(controllerCommand, log);
+                SshUtil.forwardOutput(controllerCommand, log);
                 controllerCommand.open().verify();
 
                 while (true) {
@@ -160,18 +192,11 @@ public class HyperfoilRunner implements AutoCloseable {
                 } finally {
                     LOG.info("Downloading agent logs…");
                     try {
-                        for (String agent : client.agents()) {
+                        for (String agent : GenericBenchmarkRunner.retry(client::agents)) {
                             client.downloadLog(agent, null, 0, outputDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
                         }
                     } catch (Exception e) {
                         LOG.error("Failed to download agent logs", e);
-                    }
-                    for (Compute.Instance instance : computeInstances) {
-                        try {
-                            instance.terminateAsync();
-                        } catch (Exception e) {
-                            LOG.error("Failed to terminate hyperfoil instance", e);
-                        }
                     }
                 }
             } finally {
@@ -188,7 +213,22 @@ public class HyperfoilRunner implements AutoCloseable {
         this.relay.complete(relay);
     }
 
-    public void benchmark(Protocol protocol, byte[] body) throws Exception {
+    public FrameworkRun.BenchmarkClosure benchmarkClosure(Protocol protocol, byte[] body) {
+        return new FrameworkRun.BenchmarkClosure() {
+            @Override
+            public void benchmark() throws Exception {
+                // todo: check status endpoint
+                HyperfoilRunner.this.benchmark(protocol, body, false);
+            }
+
+            @Override
+            public void pgoLoad() throws Exception {
+                HyperfoilRunner.this.benchmark(protocol, body, true);
+            }
+        };
+    }
+
+    private void benchmark(Protocol protocol, byte[] body, boolean forPgo) throws Exception {
         String name = "benchmark-" + UUID.randomUUID();
         BenchmarkBuilder benchmark = BenchmarkBuilder.builder()
                 .name(name)
@@ -208,34 +248,53 @@ public class HyperfoilRunner implements AutoCloseable {
                 .allowHttp1x(protocol != Protocol.HTTPS2)
                 .allowHttp2(protocol == Protocol.HTTPS2);
 
-        prepareScenario(body, ip, port, benchmark.addPhase("warmup")
-                .constantRate(10)
-                .duration(TimeUnit.MILLISECONDS.convert(factory.config.warmupDuration))
-                .isWarmup(true)
-                .scenario());
-        prepareScenario(body, ip, port, benchmark.addPhase("main")
-                .constantRate(10)
-                .duration(TimeUnit.MILLISECONDS.convert(factory.config.benchmarkDuration))
-                .isWarmup(false)
-                .scenario());
+        if (!forPgo) {
+            prepareScenario(body, ip, port, benchmark.addPhase("warmup")
+                    .constantRate(factory.config.compileOps)
+                    .duration(TimeUnit.MILLISECONDS.convert(factory.config.warmupDuration))
+                    .isWarmup(true)
+                    .scenario());
+            prepareScenario(body, ip, port, benchmark.addPhase("main")
+                    .constantRate(0)
+                    .usersPerSec(factory.config.initialOps, factory.config.incrementOps)
+                    .maxIterations(factory.config.maxIterations)
+                    .duration(TimeUnit.MILLISECONDS.convert(factory.config.benchmarkDuration))
+                    .isWarmup(false)
+                    .startAfter("warmup")
+                    .scenario());
+        } else {
+            prepareScenario(body, ip, port, benchmark.addPhase("main")
+                    .constantRate(factory.config.compileOps)
+                    .duration(TimeUnit.MILLISECONDS.convert(factory.config.pgoDuration))
+                    .isWarmup(false)
+                    .scenario());
+        }
 
         Client client = this.client.get();
         Client.BenchmarkRef benchmarkRef = client.register(benchmark.build(), null);
         Client.RunRef runRef = benchmarkRef.start("run", Map.of());
+        long startTime = System.nanoTime();
         while (true) {
             RequestStatisticsResponse recentStats = GenericBenchmarkRunner.retry(runRef::statsRecent);
             if (recentStats.status.equals("TERMINATED")) {
                 break;
             }
-            StringBuilder log = new StringBuilder("Benchmark progress: ").append(recentStats.status);
+            if (recentStats.status.equals("INITIALIZING")) {
+                if (System.nanoTime() - startTime > TimeUnit.MINUTES.toNanos(5)) {
+                    throw new TimeoutException("Benchmark stuck too long in INITIALIZING state");
+                }
+            }
+            StringBuilder log = new StringBuilder("Benchmark progress").append(forPgo ? " (PGO): " : ": ").append(recentStats.status);
             for (RequestStats statistic : recentStats.statistics) {
                 log.append(' ').append(statistic.metric).append(':').append(statistic.phase).append(":mean=").append(statistic.summary.meanResponseTime);
             }
             LOG.info("{}", log);
             TimeUnit.SECONDS.sleep(5);
         }
-        LOG.info("Benchmark complete, writing output");
-        Files.write(outputDirectory.resolve("output.json"), GenericBenchmarkRunner.retry(() -> runRef.statsAll("json")));
+        if (!forPgo) {
+            LOG.info("Benchmark complete, writing output");
+            Files.write(outputDirectory.resolve("output.json"), GenericBenchmarkRunner.retry(() -> runRef.statsAll("json")));
+        }
     }
 
     private static void prepareScenario(byte[] body, String ip, int port, ScenarioBuilder warmup) {
@@ -250,18 +309,13 @@ public class HyperfoilRunner implements AutoCloseable {
     }
 
     public void terminateAsync() {
-        if (worker != null) {
-            worker.cancel(true);
-        }
+        worker.cancel(true);
     }
 
     @Override
     public void close() throws Exception {
         terminateAsync();
         terminate.get();
-        for (Compute.Instance computeInstance : computeInstances) {
-            computeInstance.close();
-        }
     }
 
     private static String agentIp(int i) {
@@ -282,8 +336,8 @@ public class HyperfoilRunner implements AutoCloseable {
             this.config = config;
         }
 
-        public HyperfoilRunner create(Path outputDirectory) {
-            return new HyperfoilRunner(this, outputDirectory);
+        public HyperfoilRunner launch(Path outputDirectory, OciLocation location, String privateSubnetId) throws Exception {
+            return new HyperfoilRunner(this, outputDirectory, location, privateSubnetId);
         }
     }
 
@@ -292,6 +346,44 @@ public class HyperfoilRunner implements AutoCloseable {
         private int agentCount;
         private Duration warmupDuration;
         private Duration benchmarkDuration;
+        private Duration pgoDuration;
+
+        private int compileOps;
+        private int initialOps;
+        private int incrementOps;
+        private int maxIterations;
+
+        public int getCompileOps() {
+            return compileOps;
+        }
+
+        public void setCompileOps(int compileOps) {
+            this.compileOps = compileOps;
+        }
+
+        public int getInitialOps() {
+            return initialOps;
+        }
+
+        public void setInitialOps(int initialOps) {
+            this.initialOps = initialOps;
+        }
+
+        public int getIncrementOps() {
+            return incrementOps;
+        }
+
+        public void setIncrementOps(int incrementOps) {
+            this.incrementOps = incrementOps;
+        }
+
+        public int getMaxIterations() {
+            return maxIterations;
+        }
+
+        public void setMaxIterations(int maxIterations) {
+            this.maxIterations = maxIterations;
+        }
 
         public int getAgentCount() {
             return agentCount;
@@ -315,6 +407,14 @@ public class HyperfoilRunner implements AutoCloseable {
 
         public void setBenchmarkDuration(Duration benchmarkDuration) {
             this.benchmarkDuration = benchmarkDuration;
+        }
+
+        public Duration getPgoDuration() {
+            return pgoDuration;
+        }
+
+        public void setPgoDuration(Duration pgoDuration) {
+            this.pgoDuration = pgoDuration;
         }
     }
 

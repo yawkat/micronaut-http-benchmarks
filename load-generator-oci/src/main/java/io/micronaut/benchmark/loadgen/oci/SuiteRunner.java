@@ -46,6 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -96,9 +97,17 @@ public class SuiteRunner {
         this.compute = compute;
     }
 
+    public void clean() {
+
+        cleanCompartment(suiteConfiguration.compartment, false);
+    }
+
     public void run() throws Exception {
         Path outputDir = Path.of("output");
-        cleanCompartment(suiteConfiguration.compartment, false);
+        try {
+            Files.createDirectories(outputDir);
+        } catch (FileAlreadyExistsException ignored) {}
+        clean();
 
         List<LoadVariant> loadVariants = loadManager.getLoadVariants();
         List<Callable<Void>> allTasks = new ArrayList<>();
@@ -106,6 +115,9 @@ public class SuiteRunner {
         PhaseTracker phaseTracker = new PhaseTracker(objectMapper, outputDir);
         for (FrameworkRunSet framework : frameworks) {
             for (FrameworkRun run : framework.getRuns()) {
+                if (!suiteConfiguration.enabledRunTypes.contains(run.type())) {
+                    continue;
+                }
                 for (LoadVariant loadVariant : loadVariants) {
                     String name = run.name() + "-" + loadVariant.name();
                     index.add(new BenchmarkParameters(name, run.type(), run.parameters(), loadVariant));
@@ -145,6 +157,7 @@ public class SuiteRunner {
         progressTask.cancel(true);
         Files.move(newIndex, outputDir.resolve("index.json"), StandardCopyOption.REPLACE_EXISTING);
         LOG.info("All benchmarks complete");
+        System.exit(0);
     }
 
     private CloseableCompartment createCompartment(String parent, String name) {
@@ -386,15 +399,7 @@ public class SuiteRunner {
     public static final class SuiteConfiguration {
         private String availabilityDomain;
         private String compartment;
-        private int batchSize;
-
-        public int getBatchSize() {
-            return batchSize;
-        }
-
-        public void setBatchSize(int batchSize) {
-            this.batchSize = batchSize;
-        }
+        private List<String> enabledRunTypes;
 
         public String getCompartment() {
             return compartment;
@@ -410,6 +415,14 @@ public class SuiteRunner {
 
         public void setAvailabilityDomain(String availabilityDomain) {
             this.availabilityDomain = availabilityDomain;
+        }
+
+        public List<String> getEnabledRunTypes() {
+            return enabledRunTypes;
+        }
+
+        public void setEnabledRunTypes(List<String> enabledRunTypes) {
+            this.enabledRunTypes = enabledRunTypes;
         }
     }
 

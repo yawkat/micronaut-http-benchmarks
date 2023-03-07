@@ -27,14 +27,12 @@ import com.oracle.bmc.core.requests.GetVnicRequest;
 import com.oracle.bmc.core.requests.ListVnicAttachmentsRequest;
 import com.oracle.bmc.core.requests.UpdateSecurityListRequest;
 import com.oracle.bmc.model.BmcException;
+import io.netty.channel.ConnectTimeoutException;
 import jakarta.inject.Singleton;
-import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.session.ClientSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -169,71 +167,76 @@ public class GenericBenchmarkRunner {
             return null;
         });
 
-        progress.accept(BenchmarkPhase.SETTING_UP_INSTANCES);
-        try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
-                .privateIp(SERVER_IP)
-                .launch();
-             HyperfoilRunner hyperfoilRunner = hyperfoilRunnerFactory.create(outputDirectory);
-             RelayServer relayServer = createRelayServer(location, publicSubnetId)) {
+        retry(() -> {
+            progress.accept(BenchmarkPhase.SETTING_UP_INSTANCES);
+            try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
+                    .privateIp(SERVER_IP)
+                    .launch();
+                 HyperfoilRunner hyperfoilRunner = hyperfoilRunnerFactory.launch(outputDirectory, location, privateSubnetId);
+                 RelayServer relayServer = createRelayServer(location, publicSubnetId)) {
 
-            hyperfoilRunner.startAsync(location, privateSubnetId);
+                String relay = "opc@" + relayServer.publicIp + ":22";
+                hyperfoilRunner.setRelay(relay);
 
-            String relay = "opc@" + relayServer.publicIp + ":22";
-            hyperfoilRunner.setRelay(relay);
+                benchmarkServer.awaitStartup();
+                try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
+                     OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
 
-            benchmarkServer.awaitStartup();
-            try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
-                 OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
+                    progress.accept(BenchmarkPhase.DEPLOYING_OS);
+                    LOG.info("Updating benchmark server");
+                    SshUtil.openFirewallPorts(benchmarkServerClient, log);
+                    // this takes too long
+                    //run(benchmarkServerClient, "sudo yum update -y", log);
 
-                progress.accept(BenchmarkPhase.DEPLOYING_OS);
-                LOG.info("Updating benchmark server");
-                openFirewallPorts(benchmarkServerClient, log);
-                // this takes too long
-                //run(benchmarkServerClient, "sudo yum update -y", log);
+                    run.setupAndRun(
+                            benchmarkServerClient,
+                            log,
+                            hyperfoilRunner.benchmarkClosure(loadVariant.protocol(), loadVariant.body()),
+                            progress
+                    );
+                    progress.accept(BenchmarkPhase.SHUTTING_DOWN);
+                }
 
-                run.setupAndRun(
-                        benchmarkServerClient,
-                        log,
-                        () -> {
-                            try (ClientSession relayClient = sshFactory.connect(null, relayServer.publicIp, null)) {
-                                switch (loadVariant.protocol()) {
-                                    case HTTP1 ->
-                                            run(relayClient, "curl --http1.1 http://" + SERVER_IP + ":8080/status", log);
-                                    case HTTPS1 ->
-                                            run(relayClient, "curl --http1.1 -k https://" + SERVER_IP + ":8443/status", log);
-                                    case HTTPS2 ->
-                                            run(relayClient, "curl --http2 -k https://" + SERVER_IP + ":8443/status", log);
-                                }
-                            }
-
-                            hyperfoilRunner.benchmark(loadVariant.protocol(), loadVariant.body());
-                        },
-                        progress
-                );
-                progress.accept(BenchmarkPhase.SHUTTING_DOWN);
+                // terminate asynchronously. we will wait for termination in close()
+                hyperfoilRunner.terminateAsync();
+                relayServer.instance.terminateAsync();
+                benchmarkServer.terminateAsync();
+            } catch (Exception e) {
+                LOG.error("Benchmark run failed, may retry on same VCN", e);
+                throw e;
             }
-
-            // terminate asynchronously. we will wait for termination in close()
-            hyperfoilRunner.terminateAsync();
-            relayServer.instance.terminateAsync();
-            benchmarkServer.terminateAsync();
-        }
+            return null;
+        });
 
         LOG.info("Terminating network resources");
-        for (String subnet : new String[]{privateSubnetId, publicSubnetId}) {
-            Throttle.VCN.takeUninterruptibly();
-            vcnClient.deleteSubnet(DeleteSubnetRequest.builder().subnetId(subnet).build());
+        try {
+            for (String subnet : new String[]{privateSubnetId, publicSubnetId}) {
+                retry(() -> {
+                    Throttle.VCN.takeUninterruptibly();
+                    return vcnClient.deleteSubnet(DeleteSubnetRequest.builder().subnetId(subnet).build());
+                });
+            }
+            for (String routeTable : new String[]{privateRouteTable, publicRouteTable}) {
+                retry(() -> {
+                    Throttle.VCN.takeUninterruptibly();
+                    return vcnClient.deleteRouteTable(DeleteRouteTableRequest.builder().rtId(routeTable).build());
+                });
+            }
+            retry(() -> {
+                Throttle.VCN.takeUninterruptibly();
+                return vcnClient.deleteInternetGateway(DeleteInternetGatewayRequest.builder().igId(internetId).build());
+            });
+            retry(() -> {
+                Throttle.VCN.takeUninterruptibly();
+                return vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
+            });
+            retry(() -> {
+                Throttle.VCN.takeUninterruptibly();
+                return vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
+            });
+        } catch (BmcException e) {
+            LOG.warn("Failed to terminate benchmark network. Cleanup will happen after all benchmarks complete.", e);
         }
-        for (String routeTable : new String[]{privateRouteTable, publicRouteTable}) {
-            Throttle.VCN.takeUninterruptibly();
-            vcnClient.deleteRouteTable(DeleteRouteTableRequest.builder().rtId(routeTable).build());
-        }
-        Throttle.VCN.takeUninterruptibly();
-        vcnClient.deleteInternetGateway(DeleteInternetGatewayRequest.builder().igId(internetId).build());
-        Throttle.VCN.takeUninterruptibly();
-        vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
-        Throttle.VCN.takeUninterruptibly();
-        vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
         progress.accept(BenchmarkPhase.DONE);
     }
 
@@ -251,9 +254,17 @@ public class GenericBenchmarkRunner {
                         .build()).getVcn();
                 break;
             } catch (BmcException be) {
+                if (be.getCause() instanceof ConnectTimeoutException) {
+                    TimeUnit.SECONDS.sleep(10);
+                    continue;
+                }
                 if (be.getStatusCode() == 400 && "LimitExceeded".equals(be.getServiceCode())) {
                     LOG.warn("Hit limit in CreateVcn operation. Likely you need to up your vcn-count limit. Waiting for 2m.");
                     TimeUnit.MINUTES.sleep(2);
+                    continue;
+                }
+                if (be.getStatusCode() == 429 && "TooManyRequests".equals(be.getServiceCode())) {
+                    TimeUnit.MINUTES.sleep(1);
                     continue;
                 }
                 throw be;
@@ -277,45 +288,6 @@ public class GenericBenchmarkRunner {
             TimeUnit.SECONDS.sleep(10);
         }
         throw err;
-    }
-
-    static void openFirewallPorts(ClientSession benchmarkServerClient, OutputListener... log) throws IOException {
-        try (ChannelExec session = benchmarkServerClient.createExecChannel("sudo tee /etc/nftables/main.nft");
-             InputStream nft = GenericBenchmarkRunner.class.getResourceAsStream("/main.nft")) {
-            session.setIn(nft);
-            forwardOutput(session, log);
-            session.open().await();
-            joinAndCheck(session);
-        }
-        run(benchmarkServerClient, "sudo systemctl restart nftables", log);
-    }
-
-    public static void run(ClientSession client, String command, OutputListener... log) throws IOException {
-        try (ChannelExec chan = client.createExecChannel(command)) {
-            forwardOutput(chan, log);
-            chan.open().await();
-            joinAndCheck(chan);
-        }
-    }
-
-    private static void joinAndCheck(ChannelExec cmd) throws IOException {
-        joinAndCheck(cmd, 0);
-    }
-
-    private static void joinAndCheck(ChannelExec cmd, int expectedStatus) throws IOException {
-        cmd.waitFor(ClientSession.REMOTE_COMMAND_WAIT_EVENTS, 0);
-        if (cmd.getExitSignal() != null) {
-            throw new IOException(cmd.getExitSignal());
-        }
-        if (cmd.getExitStatus() == null || cmd.getExitStatus() != expectedStatus) {
-            throw new IOException("Exit status: " + cmd.getExitStatus());
-        }
-    }
-
-    public static void forwardOutput(ChannelExec command, OutputListener... listeners) throws IOException {
-        OutputListener.Stream stream = new OutputListener.Stream(List.of(listeners));
-        command.setOut(stream);
-        command.setErr(stream);
     }
 
     private RelayServer createRelayServer(OciLocation location, String subnetId) throws InterruptedException {

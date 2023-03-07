@@ -160,11 +160,16 @@ public class Compute {
         }
 
         private com.oracle.bmc.core.model.Instance.LifecycleState getLifecycleState() {
-            return computeClient.getInstance(GetInstanceRequest.builder()
-                    .instanceId(id)
-                    .build())
-                    .getInstance()
-                    .getLifecycleState();
+            try {
+                return GenericBenchmarkRunner.retry(() -> computeClient.getInstance(
+                                GetInstanceRequest.builder()
+                                        .instanceId(id)
+                                        .build())
+                        .getInstance()
+                        .getLifecycleState());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
 
         public void awaitStartup() throws InterruptedException {

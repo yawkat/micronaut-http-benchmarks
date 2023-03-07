@@ -11,11 +11,21 @@ private-key-location="/home/yawkat/.ssh/id_rsa"
 compartment="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
 availability-domain="hkYI:PHX-AD-3"
 batch-size=8
+enabled-run-types=[
+    "mn-hotspot",
+    "mn-native",
+    "pure-netty-hotspot",
+    #"pure-netty-native", broken
+]
 
 # configuration for the benchmark load. applies to all frameworks.
 [load]
 # protocols to test
-protocols=["HTTP1", "HTTPS1", "HTTPS2"]
+protocols=[
+    "HTTP1",
+    "HTTPS1",
+    "HTTPS2",
+]
 # different json body sizes to test
 [[load.documents]]
 string-count=6
@@ -35,15 +45,24 @@ string-length=100000
 
 # configuration for the hyperfoil cluster
 [hyperfoil]
-agent-count=4
-warmup-duration="30s"
+agent-count=8
+
+warmup-duration="1m"
+pgo-duration="1m"
+compile-ops=10
+
 benchmark-duration="2m"
+initial-ops=5
+increment-ops=10
+max-iterations=20
 
 
 # configuration for the different compute instances for the benchmark
 
 # instance that the test server runs on
 [compute.instance-types.benchmark-server]
+ocpus=4
+memory-in-gb=16
 
 # relay server used as an SSH gateway to other servers
 [compute.instance-types.relay-server]
@@ -62,9 +81,13 @@ shape="VM.Standard1.1"
 ocpus=1
 memory-in-gb=7
 
+[variants.hotspot]
+option-choices=["-XX:+UseG1GC -Xmx1G"]
+
+[variants.native-image]
+option-choices=["--gc=G1 --no-fallback"]
+
 # micronaut variant configuration
-[variants.micronaut]
-native=[false]
 [variants.micronaut.compile-variants]
 tcnative=[
     "on",
@@ -74,6 +97,6 @@ epoll=["off"]
 json=["jackson"]
 micronaut=[
     "3.8",
-    "4.0"
+    "4.0",
 ]
 java=["17"]

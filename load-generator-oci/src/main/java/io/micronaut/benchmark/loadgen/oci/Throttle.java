@@ -5,8 +5,8 @@ import java.util.concurrent.TimeUnit;
 
 public class Throttle {
     public static final Throttle IDENTITY = new Throttle(Duration.ofSeconds(5));
-    public static final Throttle COMPUTE = new Throttle(Duration.ofSeconds(2));
-    public static final Throttle VCN = new Throttle(Duration.ofSeconds(1));
+    public static final Throttle COMPUTE = new Throttle(Duration.ofSeconds(1));
+    public static final Throttle VCN = new Throttle(Duration.ofMillis(500));
 
     private final long delay;
 
