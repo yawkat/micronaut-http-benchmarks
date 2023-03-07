@@ -69,8 +69,14 @@ public class PhaseTracker {
     }
 
     private void dump() throws IOException {
-        objectMapper.writeValue(outputNew.toFile(), records);
+        objectMapper.writeValue(outputNew.toFile(), new Dump(Instant.now(), BenchmarkPhase.values(), records));
     }
+
+    record Dump(
+            Instant end,
+            BenchmarkPhase[] phases,
+            List<Record> records
+    ) {}
 
     record Record(
             Instant time,

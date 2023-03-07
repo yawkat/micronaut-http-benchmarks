@@ -5,13 +5,15 @@ import json
 import matplotlib.patches
 import matplotlib.pyplot as plt
 
-with open("output/phases.json") as f:
-    records = json.load(f)
+plt.figure(figsize=(10, 10))
 
-phases = list()
+with open("output/phases.new.json") as f:
+    dump = json.load(f)
 
+phases = dump["phases"]
+records = dump["records"]
 time_base = records[0]["time"]
-time_end = records[-1]["time"]
+time_end = dump["end"]
 real_start_time = {}
 for record in records:
     if record["phase"] == "SETTING_UP_NETWORK":
@@ -26,18 +28,14 @@ for y, name in enumerate(sorted(set([record["name"] for record in records]), key
         if record["name"] != name:
             continue
         if prev_time is not None:
-            if prev_phase not in phases:
-                phases.append(prev_phase)
             xranges.append(((prev_time - time_base) / 60, (record["time"] - prev_time) / 60))
             colors.append("C" + str(phases.index(prev_phase)))
         prev_phase = record["phase"]
         prev_time = record["time"]
     if prev_phase != "DONE":
-        if prev_phase not in phases:
-            phases.append(prev_phase)
         xranges.append(((prev_time - time_base) / 60, (time_end - prev_time) / 60))
         colors.append("C" + str(phases.index(prev_phase)))
-    plt.broken_barh(xranges, (y, 0.3), fc=colors)
+    plt.broken_barh(xranges, (y, 0.5), fc=colors)
 
 plt.legend(handles=[
     matplotlib.patches.Patch(color=f'C{i}', label=phase)
@@ -45,4 +43,4 @@ plt.legend(handles=[
 ])
 
 plt.xlim((0, (time_end - time_base) / 60))
-plt.show()
+plt.savefig("phases.png")
