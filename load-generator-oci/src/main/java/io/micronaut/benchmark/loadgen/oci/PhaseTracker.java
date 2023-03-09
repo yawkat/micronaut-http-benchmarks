@@ -34,11 +34,15 @@ public class PhaseTracker {
         this.outputOld = outputDir.resolve("phases.json");
     }
 
-    public void update(String name, BenchmarkPhase phase) {
+    public PhaseUpdater updater(String name) {
+        return (phase, percent) -> update(name, phase, percent);
+    }
+
+    public void update(String name, BenchmarkPhase phase, double phasePercentage) {
         synchronized (phases) {
             phases.put(name, phase);
         }
-        records.add(new Record(Instant.now(), name, phase));
+        records.add(new Record(Instant.now(), name, phase, phasePercentage));
     }
 
     public void trackLoop() throws IOException {
@@ -81,6 +85,15 @@ public class PhaseTracker {
     record Record(
             Instant time,
             String name,
-            BenchmarkPhase phase
+            BenchmarkPhase phase,
+            double phasePercentage
     ) {}
+
+    interface PhaseUpdater {
+        void update(BenchmarkPhase phase, double percent);
+
+        default void update(BenchmarkPhase phase) {
+            update(phase, 0);
+        }
+    }
 }

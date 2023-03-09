@@ -40,7 +40,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 
 @Singleton
 public class GenericBenchmarkRunner {
@@ -68,15 +67,15 @@ public class GenericBenchmarkRunner {
         this.sshFactory = sshFactory;
     }
 
-    public void run(Path outputDirectory, OciLocation location, FrameworkRun run, LoadVariant loadVariant, Consumer<BenchmarkPhase> progress) throws Exception {
+    public void run(Path outputDirectory, OciLocation location, FrameworkRun run, LoadVariant loadVariant, PhaseTracker.PhaseUpdater progress) throws Exception {
         try {
             Files.createDirectories(outputDirectory);
         } catch (FileAlreadyExistsException ignored) {
         }
 
-        progress.accept(BenchmarkPhase.CREATING_VCN);
+        progress.update(BenchmarkPhase.CREATING_VCN);
         Vcn vcn = createVcn(location);
-        progress.accept(BenchmarkPhase.SETTING_UP_NETWORK);
+        progress.update(BenchmarkPhase.SETTING_UP_NETWORK);
         String vcnId = vcn.getId();
         Throttle.VCN.take();
         String natId = vcnClient.createNatGateway(CreateNatGatewayRequest.builder()
@@ -168,7 +167,7 @@ public class GenericBenchmarkRunner {
         });
 
         retry(() -> {
-            progress.accept(BenchmarkPhase.SETTING_UP_INSTANCES);
+            progress.update(BenchmarkPhase.SETTING_UP_INSTANCES);
             try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
                     .privateIp(SERVER_IP)
                     .launch();
@@ -182,7 +181,7 @@ public class GenericBenchmarkRunner {
                 try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
                      OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
 
-                    progress.accept(BenchmarkPhase.DEPLOYING_OS);
+                    progress.update(BenchmarkPhase.DEPLOYING_OS);
                     LOG.info("Updating benchmark server");
                     SshUtil.openFirewallPorts(benchmarkServerClient, log);
                     // this takes too long
@@ -194,7 +193,7 @@ public class GenericBenchmarkRunner {
                             hyperfoilRunner.benchmarkClosure(loadVariant.protocol(), loadVariant.body()),
                             progress
                     );
-                    progress.accept(BenchmarkPhase.SHUTTING_DOWN);
+                    progress.update(BenchmarkPhase.SHUTTING_DOWN);
                 }
 
                 // terminate asynchronously. we will wait for termination in close()
@@ -237,7 +236,7 @@ public class GenericBenchmarkRunner {
         } catch (BmcException e) {
             LOG.warn("Failed to terminate benchmark network. Cleanup will happen after all benchmarks complete.", e);
         }
-        progress.accept(BenchmarkPhase.DONE);
+        progress.update(BenchmarkPhase.DONE);
     }
 
     private Vcn createVcn(OciLocation location) throws InterruptedException {

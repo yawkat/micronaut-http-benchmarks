@@ -121,13 +121,14 @@ public class SuiteRunner {
                 for (LoadVariant loadVariant : loadVariants) {
                     String name = run.name() + "-" + loadVariant.name();
                     index.add(new BenchmarkParameters(name, run.type(), run.parameters(), loadVariant));
-                    phaseTracker.update(name, BenchmarkPhase.BEFORE);
+                    PhaseTracker.PhaseUpdater phaseUpdater = phaseTracker.updater(name);
+                    phaseUpdater.update(BenchmarkPhase.BEFORE);
                     allTasks.add(() -> MdcTracker.withMdc(name, () -> {
                         // we could use a child compartment here, but compartments seem to be heavily throttled
                         try {
-                            benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, ph -> phaseTracker.update(name, ph));
+                            benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, phaseUpdater::update);
                         } catch (Exception e) {
-                            phaseTracker.update(name, BenchmarkPhase.FAILED);
+                            phaseUpdater.update(BenchmarkPhase.FAILED);
                             LOG.error("Failed to run benchmark", e);
                             executor.shutdownNow();
                         }

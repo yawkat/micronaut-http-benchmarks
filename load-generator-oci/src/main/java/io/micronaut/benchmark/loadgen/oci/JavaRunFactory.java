@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
-import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 @Singleton
@@ -110,10 +109,10 @@ public class JavaRunFactory {
                         }
 
                         @Override
-                        public void setupAndRun(ClientSession benchmarkServerClient, OutputListener.Write log, BenchmarkClosure benchmarkClosure, Consumer<BenchmarkPhase> progress) throws Exception {
-                            progress.accept(BenchmarkPhase.INSTALLING_SOFTWARE);
+                        public void setupAndRun(ClientSession benchmarkServerClient, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
+                            progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
                             SshUtil.run(benchmarkServerClient, "sudo yum install jdk-17-headless -y", log);
-                            progress.accept(BenchmarkPhase.DEPLOYING_SERVER);
+                            progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
                             LOG.info("Starting benchmark server (hotspot, " + typePrefix + ")");
@@ -123,8 +122,7 @@ public class JavaRunFactory {
                                 cmd.open().verify();
                                 waiter.awaitWithNextPattern(null);
 
-                                progress.accept(BenchmarkPhase.BENCHMARKING);
-                                benchmarkClosure.benchmark();
+                                benchmarkClosure.benchmark(progress);
                             }
                         }
                     }),
@@ -145,17 +143,17 @@ public class JavaRunFactory {
                         }
 
                         @Override
-                        public void setupAndRun(ClientSession benchmarkServerClient, OutputListener.Write log, BenchmarkClosure benchmarkClosure, Consumer<BenchmarkPhase> progress) throws Exception {
+                        public void setupAndRun(ClientSession benchmarkServerClient, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
 
-                            progress.accept(BenchmarkPhase.INSTALLING_SOFTWARE);
+                            progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
                             SshUtil.run(benchmarkServerClient, "sudo yum install graalvm22-ee-17-jdk -y", log);
                             SshUtil.run(benchmarkServerClient, "sudo yum update oraclelinux-release-el9 -y", log);
                             SshUtil.run(benchmarkServerClient, "sudo yum config-manager --set-enabled ol9_codeready_builder", log);
                             SshUtil.run(benchmarkServerClient, "sudo yum install graalvm22-ee-17-native-image -y", log);
-                            progress.accept(BenchmarkPhase.DEPLOYING_SERVER);
+                            progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
-                            progress.accept(BenchmarkPhase.BUILDING_PGO_IMAGE);
+                            progress.update(BenchmarkPhase.BUILDING_PGO_IMAGE);
                             String niCommandBase = "native-image --no-fallback " + nativeImageOptions + " " + additionalNativeImageOptions;
                             SshUtil.run(benchmarkServerClient, niCommandBase + " --pgo-instrument -jar " + SHADOW_JAR_LOCATION + " pgo-instrument", log);
                             LOG.info("Starting benchmark server for PGO (native, micronaut)");
@@ -165,13 +163,12 @@ public class JavaRunFactory {
                                 cmd.open().verify();
                                 waiter.awaitWithNextPattern(null);
 
-                                progress.accept(BenchmarkPhase.PGO);
-                                benchmarkClosure.pgoLoad();
+                                benchmarkClosure.pgoLoad(progress);
 
                                 SshUtil.interrupt(cmd);
                                 SshUtil.joinAndCheck(cmd, 130);
                             }
-                            progress.accept(BenchmarkPhase.BUILDING_IMAGE);
+                            progress.update(BenchmarkPhase.BUILDING_IMAGE);
                             SshUtil.run(benchmarkServerClient, niCommandBase + " --pgo -jar " + SHADOW_JAR_LOCATION + " optimized", log);
                             LOG.info("Starting benchmark server (native, " + typePrefix + ")");
                             try (ChannelExec cmd = benchmarkServerClient.createExecChannel("./optimized")) {
@@ -180,8 +177,7 @@ public class JavaRunFactory {
                                 cmd.open().verify();
                                 waiter.awaitWithNextPattern(null);
 
-                                progress.accept(BenchmarkPhase.BENCHMARKING);
-                                benchmarkClosure.benchmark();
+                                benchmarkClosure.benchmark(progress);
 
                                 SshUtil.interrupt(cmd);
                                 SshUtil.joinAndCheck(cmd, 130);

@@ -37,6 +37,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -226,18 +227,21 @@ public class HyperfoilRunner implements AutoCloseable {
     public FrameworkRun.BenchmarkClosure benchmarkClosure(Protocol protocol, byte[] body) {
         return new FrameworkRun.BenchmarkClosure() {
             @Override
-            public void benchmark() throws Exception {
-                HyperfoilRunner.this.benchmark(protocol, body, false);
+            public void benchmark(PhaseTracker.PhaseUpdater progress) throws Exception {
+                HyperfoilRunner.this.benchmark(protocol, body, progress, false);
             }
 
             @Override
-            public void pgoLoad() throws Exception {
-                HyperfoilRunner.this.benchmark(protocol, body, true);
+            public void pgoLoad(PhaseTracker.PhaseUpdater progress) throws Exception {
+                HyperfoilRunner.this.benchmark(protocol, body, progress, true);
             }
         };
     }
 
-    private void benchmark(Protocol protocol, byte[] body, boolean forPgo) throws Exception {
+    private void benchmark(Protocol protocol, byte[] body, PhaseTracker.PhaseUpdater progress, boolean forPgo) throws Exception {
+        BenchmarkPhase benchmarkPhase = forPgo ? BenchmarkPhase.PGO : BenchmarkPhase.BENCHMARKING;
+
+        progress.update(benchmarkPhase);
         String ip = GenericBenchmarkRunner.SERVER_IP;
         int port = protocol == Protocol.HTTP1 ? 8080 : 8443;
         io.hyperfoil.http.config.Protocol prot = protocol == Protocol.HTTP1 ? io.hyperfoil.http.config.Protocol.HTTP : io.hyperfoil.http.config.Protocol.HTTPS;
@@ -298,10 +302,14 @@ public class HyperfoilRunner implements AutoCloseable {
                     .scenario());
         }
 
+        Benchmark builtBenchmark = benchmark.build();
+        List<String> phaseNames = builtBenchmark.phases().stream().map(p -> p.name).toList();
+
         Client client = this.client.get();
-        Client.BenchmarkRef benchmarkRef = client.register(benchmark.build(), null);
+        Client.BenchmarkRef benchmarkRef = client.register(builtBenchmark, null);
         Client.RunRef runRef = benchmarkRef.start("run", Map.of());
         long startTime = System.nanoTime();
+        String lastPhase = null;
         while (true) {
             RequestStatisticsResponse recentStats = GenericBenchmarkRunner.retry(runRef::statsRecent);
             if (recentStats.status.equals("TERMINATED")) {
@@ -315,6 +323,11 @@ public class HyperfoilRunner implements AutoCloseable {
             StringBuilder log = new StringBuilder("Benchmark progress").append(forPgo ? " (PGO): " : ": ").append(recentStats.status);
             for (RequestStats statistic : recentStats.statistics) {
                 log.append(' ').append(statistic.metric).append(':').append(statistic.phase).append(":mean=").append(statistic.summary.meanResponseTime);
+                if (!Objects.equals(statistic.phase, lastPhase)) {
+                    lastPhase = statistic.phase;
+                    double progressPercent = (phaseNames.indexOf(statistic.phase) + 1.0) / (phaseNames.size() + 1);
+                    progress.update(benchmarkPhase, progressPercent);
+                }
             }
             LOG.info("{}", log);
             TimeUnit.SECONDS.sleep(5);

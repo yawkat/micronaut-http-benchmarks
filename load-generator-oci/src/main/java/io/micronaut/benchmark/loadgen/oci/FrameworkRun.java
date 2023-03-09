@@ -3,8 +3,6 @@ package io.micronaut.benchmark.loadgen.oci;
 import io.micronaut.core.annotation.Nullable;
 import org.apache.sshd.client.session.ClientSession;
 
-import java.util.function.Consumer;
-
 public interface FrameworkRun {
     String type();
 
@@ -17,11 +15,11 @@ public interface FrameworkRun {
             ClientSession benchmarkServerClient,
             OutputListener.Write log,
             BenchmarkClosure benchmarkClosure,
-            Consumer<BenchmarkPhase> progress) throws Exception;
+            PhaseTracker.PhaseUpdater progress) throws Exception;
 
     interface BenchmarkClosure {
-        void benchmark() throws Exception;
+        void benchmark(PhaseTracker.PhaseUpdater progress) throws Exception;
 
-        void pgoLoad() throws Exception;
+        void pgoLoad(PhaseTracker.PhaseUpdater progress) throws Exception;
     }
 }
