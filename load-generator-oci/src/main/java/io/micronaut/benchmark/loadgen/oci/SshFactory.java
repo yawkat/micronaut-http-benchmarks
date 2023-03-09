@@ -3,9 +3,6 @@ package io.micronaut.benchmark.loadgen.oci;
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.core.annotation.Nullable;
-import io.micronaut.runtime.event.ApplicationShutdownEvent;
-import io.micronaut.runtime.event.ApplicationStartupEvent;
-import io.micronaut.runtime.event.annotation.EventListener;
 import jakarta.inject.Singleton;
 import org.apache.sshd.client.ClientBuilder;
 import org.apache.sshd.client.SshClient;
@@ -72,16 +69,6 @@ public class SshFactory {
         LOG.info("Public key: {}", publicKey);
     }
 
-    @EventListener
-    public void start(ApplicationStartupEvent evt) {
-        sshClient.start();
-    }
-
-    @EventListener
-    public void stop(ApplicationShutdownEvent evt) {
-        sshClient.stop();
-    }
-
     public String publicKey() {
         return publicKey;
     }
@@ -93,15 +80,15 @@ public class SshFactory {
     }
 
     ClientSession connect(
-            Compute.Instance instance,
+            @Nullable Compute.Instance instance,
             String instanceIp,
-            @Nullable String relay
+            @Nullable Relay relay
     ) throws Exception {
         LOG.info("Connecting to SSH server at opc@{}", instanceIp);
         int attempts = 0;
         while (true) {
             try {
-                ClientSession sess = sshClient.connect(new HostConfigEntry("", instanceIp, 22, "opc", relay)).verify().getClientSession();
+                ClientSession sess = sshClient.connect(new HostConfigEntry("", instanceIp, 22, "opc", relay == null ? null : relay.username + "@" + relay.relayIp + ":22")).verify().getClientSession();
                 sess.auth().verify();
                 return sess;
             } catch (SshException e) {
@@ -115,7 +102,9 @@ public class SshFactory {
                     }
                 }
             }
-            instance.checkStarted();
+            if (instance != null) {
+                instance.checkStarted();
+            }
             TimeUnit.SECONDS.sleep(1);
             if (attempts++ > 500) {
                 throw new IOException("Failed to connect to SSH server " + instance + " at " + instanceIp + " via " + relay);
@@ -142,5 +131,11 @@ public class SshFactory {
         public void setPrivateKeyLocation(Path privateKeyLocation) {
             this.privateKeyLocation = privateKeyLocation;
         }
+    }
+
+    public record Relay(
+            String username,
+            String relayIp
+    ) {
     }
 }

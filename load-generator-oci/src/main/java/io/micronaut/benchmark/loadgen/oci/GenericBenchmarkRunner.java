@@ -175,7 +175,7 @@ public class GenericBenchmarkRunner {
                  HyperfoilRunner hyperfoilRunner = hyperfoilRunnerFactory.launch(outputDirectory, location, privateSubnetId);
                  RelayServer relayServer = createRelayServer(location, publicSubnetId)) {
 
-                String relay = "opc@" + relayServer.publicIp + ":22";
+                SshFactory.Relay relay = new SshFactory.Relay("opc", relayServer.publicIp);
                 hyperfoilRunner.setRelay(relay);
 
                 benchmarkServer.awaitStartup();
@@ -278,6 +278,8 @@ public class GenericBenchmarkRunner {
         for (int i = 0; i < 3; i++) {
             try {
                 return callable.call();
+            } catch (InvalidatesBenchmarkException ibe) {
+                throw ibe;
             } catch (Exception e) {
                 if (err == null) {
                     err = e;

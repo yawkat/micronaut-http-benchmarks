@@ -73,17 +73,17 @@ def get_index_property(index_item: dict, property: typing.Sequence[str]):
     return v
 
 
-def as_properties(index_item: dict, _root=True) -> typing.Dict[typing.Sequence[str], typing.Any]:
+def as_properties(index_item: dict, _parent_path=()) -> typing.Dict[typing.Sequence[str], typing.Any]:
     res = {}
     for k, v in index_item.items():
-        if _root and k == "name":
+        path = (*_parent_path, k)
+        if path == ("name",):
             continue
 
         if type(v) is dict:
-            for sk, sv in as_properties(v, _root=False).items():
-                res[(k, *sk)] = sv
+            res.update(as_properties(v, _parent_path=path))
         else:
-            res[(k,)] = v
+            res[path] = v
     return res
 
 
@@ -108,7 +108,7 @@ def main():
     index = sorted(index, key=lambda i: i["name"])
     index = [i for i in index if not has_error(i["name"])]
     fig, ax = plt.subplots()
-    discriminator_properties = [("parameters", "micronaut")]
+    discriminator_properties = [("load", "protocol")]
     filter_properties = {("type",): "mn-hotspot"}
 
     def get_discriminator_tuple(index_item: dict):

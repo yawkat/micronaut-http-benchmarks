@@ -48,9 +48,11 @@ public class JavaRunFactory {
         @Nullable
         private Object compileConfiguration;
         private byte[] boundLine;
+        private String additionalNativeImageOptions;
 
         private RunBuilder(String typePrefix) {
             this.typePrefix = typePrefix;
+            this.additionalNativeImageOptions = nativeImageConfiguration.getPrefixOptions().getOrDefault(typePrefix, "");
         }
 
         /**
@@ -154,7 +156,8 @@ public class JavaRunFactory {
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
                             progress.accept(BenchmarkPhase.BUILDING_PGO_IMAGE);
-                            SshUtil.run(benchmarkServerClient, "USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false native-image " + nativeImageOptions + " --pgo-instrument -jar " + SHADOW_JAR_LOCATION + " pgo-instrument", log);
+                            String niCommandBase = "native-image --no-fallback " + nativeImageOptions + " " + additionalNativeImageOptions;
+                            SshUtil.run(benchmarkServerClient, niCommandBase + " --pgo-instrument -jar " + SHADOW_JAR_LOCATION + " pgo-instrument", log);
                             LOG.info("Starting benchmark server for PGO (native, micronaut)");
                             try (ChannelExec cmd = benchmarkServerClient.createExecChannel("./pgo-instrument")) {
                                 OutputListener.Waiter waiter = new OutputListener.Waiter(ByteBuffer.wrap(boundLine));
@@ -169,7 +172,7 @@ public class JavaRunFactory {
                                 SshUtil.joinAndCheck(cmd, 130);
                             }
                             progress.accept(BenchmarkPhase.BUILDING_IMAGE);
-                            SshUtil.run(benchmarkServerClient, "USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false native-image " + nativeImageOptions + " --pgo -jar " + SHADOW_JAR_LOCATION + " optimized", log);
+                            SshUtil.run(benchmarkServerClient, niCommandBase + " --pgo -jar " + SHADOW_JAR_LOCATION + " optimized", log);
                             LOG.info("Starting benchmark server (native, " + typePrefix + ")");
                             try (ChannelExec cmd = benchmarkServerClient.createExecChannel("./optimized")) {
                                 OutputListener.Waiter waiter = new OutputListener.Waiter(ByteBuffer.wrap(boundLine));

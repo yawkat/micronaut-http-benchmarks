@@ -52,9 +52,7 @@ pgo-duration="1m"
 compile-ops=10
 
 benchmark-duration="2m"
-initial-ops=5
-increment-ops=10
-max-iterations=20
+ops=[5, 10, 15, 25, 50, 75, 100, 200, 400, 800, 1000, 2000, 4000]
 
 
 # configuration for the different compute instances for the benchmark
