@@ -283,7 +283,7 @@ public class HyperfoilRunner implements AutoCloseable {
                         .constantRate(0)
                         .usersPerSec(ops)
                         .maxSessions(ops * SESSION_LIMIT_FACTOR)
-                        .duration(TimeUnit.MILLISECONDS.convert(factory.config.benchmarkDuration.dividedBy(factory.config.ops.size())))
+                        .duration(TimeUnit.MILLISECONDS.convert(factory.config.benchmarkDuration))
                         .isWarmup(false)
                         .startAfter(lastPhase)
                         .scenario());
