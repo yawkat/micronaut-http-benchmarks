@@ -162,7 +162,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 f.get();
             }
 
-            try (ChannelExec controllerCommand = controllerSession.createExecChannel(REMOTE_HYPERFOIL_LOCATION + "/bin/controller.sh");
+            try (ChannelExec controllerCommand = controllerSession.createExecChannel(REMOTE_HYPERFOIL_LOCATION + "/bin/controller.sh -Djgroups.join_timeout=20000");
                  ResilientSshPortForwarder controllerPortForward = factory.resilientForwarderFactory.create(
                          () -> factory.sshFactory.connect(instances.controller, HYPERFOIL_CONTROLLER_IP, relay),
                          new SshdSocketAddress("localhost", 8090)
@@ -275,7 +275,9 @@ public class HyperfoilRunner implements AutoCloseable {
                 .allowHttp2(protocol == Protocol.HTTPS2)
                 .sharedConnections(50);
 
+        List<String> phaseNames = new ArrayList<>();
         if (!forPgo) {
+            phaseNames.add("warmup");
             prepareScenario(body, ip, port, benchmark.addPhase("warmup")
                     .constantRate(factory.config.compileOps)
                     .maxSessions(factory.config.compileOps * SESSION_LIMIT_FACTOR)
@@ -286,6 +288,7 @@ public class HyperfoilRunner implements AutoCloseable {
             for (int i = 0; i < factory.config.ops.size(); i++) {
                 int ops = factory.config.ops.get(i);
                 String phaseName = "main/" + i;
+                phaseNames.add(phaseName);
                 prepareScenario(body, ip, port, benchmark.addPhase(phaseName)
                         .constantRate(0)
                         .usersPerSec(ops)
@@ -297,6 +300,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 lastPhase = phaseName;
             }
         } else {
+            phaseNames.add("pgo");
             prepareScenario(body, ip, port, benchmark.addPhase("pgo")
                     .constantRate(factory.config.compileOps)
                     .maxSessions(factory.config.compileOps * SESSION_LIMIT_FACTOR)
@@ -306,7 +310,6 @@ public class HyperfoilRunner implements AutoCloseable {
         }
 
         Benchmark builtBenchmark = benchmark.build();
-        List<String> phaseNames = builtBenchmark.phases().stream().map(p -> p.name).toList();
 
         Client client = this.client.get();
         Client.BenchmarkRef benchmarkRef = client.register(builtBenchmark, null);
