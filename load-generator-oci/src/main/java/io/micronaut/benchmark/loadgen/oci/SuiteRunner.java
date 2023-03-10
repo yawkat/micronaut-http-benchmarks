@@ -119,21 +119,23 @@ public class SuiteRunner {
                     continue;
                 }
                 for (LoadVariant loadVariant : loadVariants) {
-                    String name = run.name() + "-" + loadVariant.name();
-                    index.add(new BenchmarkParameters(name, run.type(), run.parameters(), loadVariant));
-                    PhaseTracker.PhaseUpdater phaseUpdater = phaseTracker.updater(name);
-                    phaseUpdater.update(BenchmarkPhase.BEFORE);
-                    allTasks.add(() -> MdcTracker.withMdc(name, () -> {
-                        // we could use a child compartment here, but compartments seem to be heavily throttled
-                        try {
-                            benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, phaseUpdater::update);
-                        } catch (Exception e) {
-                            phaseUpdater.update(BenchmarkPhase.FAILED);
-                            LOG.error("Failed to run benchmark", e);
-                            executor.shutdownNow();
-                        }
-                        return null;
-                    }));
+                    for (int repetition = 0; repetition < suiteConfiguration.repetitions; repetition++) {
+                        String name = run.name() + "-" + loadVariant.name() + "-" + repetition;
+                        index.add(new BenchmarkParameters(name, run.type(), run.parameters(), loadVariant, repetition));
+                        PhaseTracker.PhaseUpdater phaseUpdater = phaseTracker.updater(name);
+                        phaseUpdater.update(BenchmarkPhase.BEFORE);
+                        allTasks.add(() -> MdcTracker.withMdc(name, () -> {
+                            // we could use a child compartment here, but compartments seem to be heavily throttled
+                            try {
+                                benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, phaseUpdater);
+                            } catch (Exception e) {
+                                phaseUpdater.update(BenchmarkPhase.FAILED);
+                                LOG.error("Failed to run benchmark", e);
+                                executor.shutdownNow();
+                            }
+                            return null;
+                        }));
+                    }
                 }
             }
         }
@@ -144,6 +146,7 @@ public class SuiteRunner {
                 LOG.error("Error in phase tracker", e);
             }
         });
+        Collections.shuffle(allTasks);
         LOG.info("There are {} benchmarks to run", allTasks.size());
         Path newIndex = outputDir.resolve("index.new.json");
         objectMapper.writeValue(newIndex.toFile(), index);
@@ -401,6 +404,15 @@ public class SuiteRunner {
         private String availabilityDomain;
         private String compartment;
         private List<String> enabledRunTypes;
+        private int repetitions;
+
+        public int getRepetitions() {
+            return repetitions;
+        }
+
+        public void setRepetitions(int repetitions) {
+            this.repetitions = repetitions;
+        }
 
         public String getCompartment() {
             return compartment;
@@ -431,7 +443,8 @@ public class SuiteRunner {
             String name,
             String type,
             Object parameters,
-            LoadVariant load
+            LoadVariant load,
+            int repetition
     ) {
     }
 }

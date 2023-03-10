@@ -10,13 +10,14 @@ private-key-location="/home/yawkat/.ssh/id_rsa"
 # the compartment to run the benchmark suite in. the compartment should be empty; it will be cleared before and after each run.
 compartment="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
 availability-domain="hkYI:PHX-AD-3"
-batch-size=8
 enabled-run-types=[
     "mn-hotspot",
     "mn-native",
     "pure-netty-hotspot",
     #"pure-netty-native", broken
 ]
+# independent repetitions of each benchmark
+repetitions=5
 
 # configuration for the benchmark load. applies to all frameworks.
 [load]
