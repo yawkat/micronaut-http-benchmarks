@@ -273,6 +273,10 @@ public class GenericBenchmarkRunner {
     }
 
     static <T> T retry(Callable<T> callable) throws Exception {
+        return retry(callable, () -> {});
+    }
+
+    static <T> T retry(Callable<T> callable, Runnable onFailure) throws Exception {
         Exception err = null;
         for (int i = 0; i < 3; i++) {
             try {
@@ -286,6 +290,7 @@ public class GenericBenchmarkRunner {
                     err.addSuppressed(e);
                 }
             }
+            onFailure.run();
             TimeUnit.SECONDS.sleep(10);
         }
         throw err;

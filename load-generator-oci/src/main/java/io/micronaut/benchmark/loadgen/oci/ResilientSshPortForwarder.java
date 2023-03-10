@@ -114,8 +114,7 @@ public final class ResilientSshPortForwarder implements Closeable {
         return connectPromise;
     }
 
-    @Override
-    public void close() {
+    public void disconnect() {
         loop.execute(() -> {
             if (current != null) {
                 try {
@@ -126,6 +125,11 @@ public final class ResilientSshPortForwarder implements Closeable {
                 current = null;
             }
         });
+    }
+
+    @Override
+    public void close() {
+        disconnect();
         downstreamServerChannel.close().syncUninterruptibly();
     }
 

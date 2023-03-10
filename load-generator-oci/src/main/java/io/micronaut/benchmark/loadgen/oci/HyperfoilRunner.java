@@ -65,6 +65,7 @@ public class HyperfoilRunner implements AutoCloseable {
     private final Future<?> worker;
     private final List<Compute.Instance> computeInstances = new CopyOnWriteArrayList<>();
     private ClientSession controllerSession;
+    private ResilientSshPortForwarder controllerPortForward;
 
     static {
         System.setProperty("io.hyperfoil.cli.request.timeout", "120000");
@@ -171,6 +172,8 @@ public class HyperfoilRunner implements AutoCloseable {
                          controllerPortForward.address().getHostName(),
                          controllerPortForward.address().getPort(),
                          false, true, null)) {
+                this.controllerPortForward = controllerPortForward;
+
                 SshUtil.forwardOutput(controllerCommand, log);
                 controllerCommand.open().verify();
 
@@ -311,7 +314,7 @@ public class HyperfoilRunner implements AutoCloseable {
         long startTime = System.nanoTime();
         String lastPhase = null;
         while (true) {
-            RequestStatisticsResponse recentStats = GenericBenchmarkRunner.retry(runRef::statsRecent);
+            RequestStatisticsResponse recentStats = GenericBenchmarkRunner.retry(runRef::statsRecent, controllerPortForward::disconnect);
             if (recentStats.status.equals("TERMINATED")) {
                 break;
             }
@@ -338,7 +341,7 @@ public class HyperfoilRunner implements AutoCloseable {
         StatsAllWrapper wrapper = GenericBenchmarkRunner.retry(() -> {
             byte[] bytes = runRef.statsAll("json");
             return new StatsAllWrapper(bytes, factory.objectMapper.readValue(bytes, StatsAll.class));
-        });
+        }, controllerPortForward::disconnect);
         List<String> benchmarkFailures = new ArrayList<>();
         boolean invalidatesBenchmark = false;
         for (StatsAll.Info.Error error : wrapper.statsAll.info.errors) {
