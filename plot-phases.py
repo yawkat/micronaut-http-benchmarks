@@ -11,7 +11,7 @@ plt.figure(figsize=(10, 10))
 with open("output/phases.new.json") as f:
     dump = json.load(f)
 
-phases = dump["phases"]
+phases = dump["phases"][:-2]
 records = dump["records"]
 time_base = records[0]["time"]
 time_end = dump["end"]
@@ -22,6 +22,8 @@ for record in records:
 
 
 def color_for_record(rec):
+    if rec["phase"] not in phases:
+        return "black"
     percent = rec["phasePercentage"]
     return matplotlib.colors.to_rgba("C" + str(phases.index(rec["phase"])), 1 - percent)
 
@@ -47,7 +49,7 @@ for y, name in enumerate(sorted(set([record["name"] for record in records]), key
 plt.legend(handles=[
     matplotlib.patches.Patch(color=f'C{i}', label=phase)
     for i, phase in enumerate(phases)
-])
+], loc='upper left')
 
 plt.xlim((0, (time_end - time_base) / 60))
 plt.savefig("phases.png")
