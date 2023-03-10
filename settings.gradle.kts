@@ -17,6 +17,7 @@ rootProject.name = "micronaut-benchmark"
 
 include("load-generator-oci")
 include("load-generator-gatling")
+include("test-case-pure-netty")
 
 configure<io.micronaut.bench.AppVariants> {
     combinations {
