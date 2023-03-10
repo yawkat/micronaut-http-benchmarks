@@ -178,9 +178,6 @@ public class JavaRunFactory {
                                 waiter.awaitWithNextPattern(null);
 
                                 benchmarkClosure.benchmark(progress);
-
-                                SshUtil.interrupt(cmd);
-                                SshUtil.joinAndCheck(cmd, 130);
                             }
                         }
                     })
