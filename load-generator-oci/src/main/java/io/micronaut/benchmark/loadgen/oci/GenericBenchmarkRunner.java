@@ -73,6 +73,18 @@ public class GenericBenchmarkRunner {
         } catch (FileAlreadyExistsException ignored) {
         }
 
+        retry(() -> {
+            try {
+                run0(outputDirectory, location, run, loadVariant, progress);
+            } catch (Exception e) {
+                LOG.error("Benchmark run failed, may retry", e);
+                throw e;
+            }
+            return null;
+        });
+    }
+
+    private void run0(Path outputDirectory, OciLocation location, FrameworkRun run, LoadVariant loadVariant, PhaseTracker.PhaseUpdater progress) throws Exception {
         progress.update(BenchmarkPhase.CREATING_VCN);
         Vcn vcn = createVcn(location);
         progress.update(BenchmarkPhase.SETTING_UP_NETWORK);
@@ -166,76 +178,71 @@ public class GenericBenchmarkRunner {
             return null;
         });
 
-        retry(() -> {
-            progress.update(BenchmarkPhase.SETTING_UP_INSTANCES);
-            try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
-                    .privateIp(SERVER_IP)
-                    .launch();
-                 HyperfoilRunner hyperfoilRunner = hyperfoilRunnerFactory.launch(outputDirectory, location, privateSubnetId);
-                 RelayServer relayServer = createRelayServer(location, publicSubnetId)) {
+        progress.update(BenchmarkPhase.SETTING_UP_INSTANCES);
+        try (Compute.Instance benchmarkServer = compute.builder("benchmark-server", location, privateSubnetId)
+                .privateIp(SERVER_IP)
+                .launch();
+             HyperfoilRunner hyperfoilRunner = hyperfoilRunnerFactory.launch(outputDirectory, location, privateSubnetId);
+             RelayServer relayServer = createRelayServer(location, publicSubnetId)) {
 
-                SshFactory.Relay relay = new SshFactory.Relay("opc", relayServer.publicIp);
-                hyperfoilRunner.setRelay(relay);
+            SshFactory.Relay relay = new SshFactory.Relay("opc", relayServer.publicIp);
+            hyperfoilRunner.setRelay(relay);
 
-                benchmarkServer.awaitStartup();
-                try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
-                     OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
+            benchmarkServer.awaitStartup();
+            try (ClientSession benchmarkServerClient = sshFactory.connect(benchmarkServer, SERVER_IP, relay);
+                 OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
 
-                    progress.update(BenchmarkPhase.DEPLOYING_OS);
-                    LOG.info("Updating benchmark server");
-                    SshUtil.openFirewallPorts(benchmarkServerClient, log);
-                    // this takes too long
-                    //run(benchmarkServerClient, "sudo yum update -y", log);
+                progress.update(BenchmarkPhase.DEPLOYING_OS);
+                LOG.info("Updating benchmark server");
+                SshUtil.openFirewallPorts(benchmarkServerClient, log);
+                // this takes too long
+                //run(benchmarkServerClient, "sudo yum update -y", log);
 
-                    run.setupAndRun(
-                            benchmarkServerClient,
-                            log,
-                            hyperfoilRunner.benchmarkClosure(loadVariant.protocol(), loadVariant.body()),
-                            progress
-                    );
-                    progress.update(BenchmarkPhase.SHUTTING_DOWN);
+                run.setupAndRun(
+                        benchmarkServerClient,
+                        log,
+                        hyperfoilRunner.benchmarkClosure(loadVariant.protocol(), loadVariant.body()),
+                        progress
+                );
+                progress.update(BenchmarkPhase.SHUTTING_DOWN);
+            }
+
+            // terminate asynchronously. we will wait for termination in close()
+            hyperfoilRunner.terminateAsync();
+            relayServer.instance.terminateAsync();
+            benchmarkServer.terminateAsync();
+        } finally {
+            LOG.info("Terminating network resources");
+            try {
+                for (String subnet : new String[]{privateSubnetId, publicSubnetId}) {
+                    retry(() -> {
+                        Throttle.VCN.takeUninterruptibly();
+                        return vcnClient.deleteSubnet(DeleteSubnetRequest.builder().subnetId(subnet).build());
+                    });
                 }
-
-                // terminate asynchronously. we will wait for termination in close()
-                hyperfoilRunner.terminateAsync();
-                relayServer.instance.terminateAsync();
-                benchmarkServer.terminateAsync();
-            } catch (Exception e) {
-                LOG.error("Benchmark run failed, may retry on same VCN", e);
-                throw e;
-            }
-            return null;
-        });
-
-        LOG.info("Terminating network resources");
-        try {
-            for (String subnet : new String[]{privateSubnetId, publicSubnetId}) {
+                for (String routeTable : new String[]{privateRouteTable, publicRouteTable}) {
+                    retry(() -> {
+                        Throttle.VCN.takeUninterruptibly();
+                        return vcnClient.deleteRouteTable(DeleteRouteTableRequest.builder().rtId(routeTable).build());
+                    });
+                }
                 retry(() -> {
                     Throttle.VCN.takeUninterruptibly();
-                    return vcnClient.deleteSubnet(DeleteSubnetRequest.builder().subnetId(subnet).build());
+                    return vcnClient.deleteInternetGateway(DeleteInternetGatewayRequest.builder().igId(internetId).build());
                 });
-            }
-            for (String routeTable : new String[]{privateRouteTable, publicRouteTable}) {
                 retry(() -> {
                     Throttle.VCN.takeUninterruptibly();
-                    return vcnClient.deleteRouteTable(DeleteRouteTableRequest.builder().rtId(routeTable).build());
+                    return vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
                 });
+                retry(() -> {
+                    Throttle.VCN.takeUninterruptibly();
+                    return vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
+                });
+            } catch (BmcException e) {
+                LOG.warn("Failed to terminate benchmark network. Cleanup will happen after all benchmarks complete.", e);
             }
-            retry(() -> {
-                Throttle.VCN.takeUninterruptibly();
-                return vcnClient.deleteInternetGateway(DeleteInternetGatewayRequest.builder().igId(internetId).build());
-            });
-            retry(() -> {
-                Throttle.VCN.takeUninterruptibly();
-                return vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
-            });
-            retry(() -> {
-                Throttle.VCN.takeUninterruptibly();
-                return vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
-            });
-        } catch (BmcException e) {
-            LOG.warn("Failed to terminate benchmark network. Cleanup will happen after all benchmarks complete.", e);
         }
+
         progress.update(BenchmarkPhase.DONE);
     }
 
