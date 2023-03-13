@@ -83,10 +83,14 @@ ocpus=1
 memory-in-gb=7
 
 [variants.hotspot]
-option-choices=["-XX:+UseG1GC -Xmx1G"]
+version=19
+option-choices=["-XX:+UseG1GC -Xmx1G --enable-preview"]
 
 [variants.native-image]
-option-choices=["--gc=G1 --no-fallback"]
+# these are native-image options that are benchmarked against each other
+option-choices=["--gc=G1"]
+# these are framework-specific options that are just required to get the build to work :)
+prefix-options.mn="-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.configure=ALL-UNNAMED -J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.jdk=ALL-UNNAMED -J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.jni=ALL-UNNAMED -J--add-exports=org.graalvm.sdk/org.graalvm.nativeimage.impl=ALL-UNNAMED"
 
 # micronaut variant configuration
 [variants.micronaut.compile-variants]

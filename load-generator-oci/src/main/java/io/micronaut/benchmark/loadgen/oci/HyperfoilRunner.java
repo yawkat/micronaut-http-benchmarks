@@ -252,7 +252,7 @@ public class HyperfoilRunner implements AutoCloseable {
         String statusUri = prot.scheme + "://" + ip + ":" + port + "/status";
         GenericBenchmarkRunner.retry(() -> {
             try (OutputListener.Write write = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("status.json")))) {
-                SshUtil.run(controllerSession, "curl --silent --insecure " + statusUri, write);
+                SshUtil.run(controllerSession, "curl " + (protocol == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --silent --insecure " + statusUri, write);
             }
             return null;
         });
@@ -495,8 +495,8 @@ public class HyperfoilRunner implements AutoCloseable {
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record StatsAll(
             Info info,
-           List<SlaFailure> failures,
-           List<Stats> stats
+            List<SlaFailure> failures,
+            List<Stats> stats
     ) {
         @JsonIgnoreProperties(ignoreUnknown = true)
         private record Info(

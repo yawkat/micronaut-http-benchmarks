@@ -111,7 +111,7 @@ public class JavaRunFactory {
                         @Override
                         public void setupAndRun(ClientSession benchmarkServerClient, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
                             progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
-                            SshUtil.run(benchmarkServerClient, "sudo yum install jdk-17-headless -y", log);
+                            SshUtil.run(benchmarkServerClient, "sudo yum install jdk-" + hotspotConfiguration.getVersion() + "-headless -y", log);
                             progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);

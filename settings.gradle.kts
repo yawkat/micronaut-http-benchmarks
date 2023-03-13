@@ -17,6 +17,7 @@ rootProject.name = "micronaut-benchmark"
 
 include("load-generator-oci")
 include("test-case-pure-netty")
+include("test-case-helidon-nima")
 
 configure<io.micronaut.bench.AppVariants> {
     combinations {
