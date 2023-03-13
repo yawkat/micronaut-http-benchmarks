@@ -3,6 +3,8 @@ import json
 import math
 import typing
 
+import matplotlib.axes
+import matplotlib.axis
 import matplotlib.patches
 import matplotlib.pyplot as plt
 import matplotlib.scale
@@ -114,11 +116,11 @@ def has_error(benchmark_id: str):
 
 
 def combine_histograms(histograms):
-    bucket_to = list(sorted([
+    bucket_to = list(sorted(set([
         bucket["to"]
         for histogram in histograms
         for bucket in histogram
-    ]))
+    ])))
     bucket_to.insert(0, 0)
     bucket_count = [0 for _ in bucket_to]
     total_count = 0
@@ -145,6 +147,17 @@ def combine_histograms(histograms):
         })
     return out
 
+
+def ns_to_str(ns: int) -> str:
+    for factor_candidate, unit_candidate in ((10 ** 9, 's'), (10 ** 6, 'ms'), (10 ** 3, 'µs')):
+        if factor_candidate <= ns:
+            factor = factor_candidate
+            unit = unit_candidate
+            break
+    else:
+        factor = 1
+        unit = 'ns'
+    return f'{ns / factor:g}{unit}'
 
 
 # matches application.toml hyperfoil.ops
@@ -196,14 +209,14 @@ def main():
         discriminator_tuple = get_discriminator_tuple(run)
         if discriminator_tuple not in discriminated:
             discriminated.append(discriminator_tuple)
-    max_time = 10**6.5
+    max_time = 2*10**6
     max_percentile = 0.999
     print(min_time, max_time)
     colors_by_discriminator = {d: f'C{i}' for i, d in enumerate(discriminated)}
 
     for phase_i, ops in enumerate(OPS):
         phase = f"main/{phase_i}"
-        ax = axs[phase_i // len(axs[0])][phase_i % len(axs[0])]
+        ax: matplotlib.axes.Axes = axs[phase_i // len(axs[0])][phase_i % len(axs[0])]
 
         any_shown = False
         for disc_tuple in discriminated:
@@ -217,8 +230,7 @@ def main():
                         disc_histograms.append(histogram)
                     #plot_histogram(
                     #    ax, histogram,
-                    #    color=colors_by_discriminator[disc_tuple],
-                    #    label=" ".join(map(str, disc_tuple))
+                    #    color=colors_by_discriminator[disc_tuple]
                     #)
                     #any_shown = True
                 else:
@@ -228,7 +240,6 @@ def main():
                 plot_histogram(
                     ax, combine_histograms(disc_histograms),
                     color=colors_by_discriminator[disc_tuple],
-                    label=" ".join(map(str, disc_tuple))
                 )
                 any_shown = True
         if any_shown:
@@ -236,12 +247,13 @@ def main():
 
             percentile_ticks = list(generate_percentile_ticks(max_percentile))
             ax.set_xscale("function", functions=(percentile_transform, percentile_transform_reverse))
-            ax.axvline(0.5)
             ax.set_xticks(percentile_ticks, [str(p) for p in percentile_ticks])
-            ax.set_ylabel("Request time (ns)")
+            ax.set_ylabel("Request time")
             ax.set_xlim(0, max_percentile)
-            ax.set_yscale("log")
+            ax.yaxis.set_major_formatter(lambda ns, _: ns_to_str(ns))
+            # ax.set_yscale("log")
             ax.set_ylim(min_time * 0.9, max_time)
+            ax.axvline(0.5)
             if phase_i == 0:
                 ax.legend(handles=[
                     matplotlib.patches.Patch(color=v, label=" ".join(map(str, k)))
