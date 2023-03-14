@@ -19,6 +19,7 @@ include("load-generator-oci")
 include("test-case-pure-netty")
 include("test-case-helidon-nima")
 include("test-case-spring-boot")
+include("test-case-vertx")
 
 configure<io.micronaut.bench.AppVariants> {
     combinations {

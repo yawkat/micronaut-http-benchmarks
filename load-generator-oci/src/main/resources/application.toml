@@ -17,6 +17,7 @@ enabled-run-types=[
     #"pure-netty-native", broken
     "helidon-nima-hotspot",
     "spring-boot-hotspot",
+    "vertx-hotspot",
 ]
 # independent repetitions of each benchmark
 repetitions=5
