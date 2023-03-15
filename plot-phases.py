@@ -6,7 +6,7 @@ import matplotlib.colors
 import matplotlib.patches
 import matplotlib.pyplot as plt
 
-plt.figure(figsize=(10, 10))
+plt.figure(figsize=(10, 12))
 
 with open("output/phases.new.json") as f:
     dump = json.load(f)
@@ -52,4 +52,5 @@ plt.legend(handles=[
 ], loc='upper left')
 
 plt.xlim((0, (time_end - time_base) / 60))
+plt.tight_layout()
 plt.savefig("phases.png")
