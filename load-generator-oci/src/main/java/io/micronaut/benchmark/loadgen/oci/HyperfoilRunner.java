@@ -30,7 +30,9 @@ import org.apache.sshd.scp.client.ScpClientCreator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InterruptedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -250,9 +252,23 @@ public class HyperfoilRunner implements AutoCloseable {
         io.hyperfoil.http.config.Protocol prot = protocol == Protocol.HTTP1 ? io.hyperfoil.http.config.Protocol.HTTP : io.hyperfoil.http.config.Protocol.HTTPS;
 
         String statusUri = prot.scheme + "://" + ip + ":" + port + "/status";
+        String findUri = prot.scheme + "://" + ip + ":" + port + "/search/find";
+        String curlBase = "curl " + (protocol == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --silent --insecure ";
         GenericBenchmarkRunner.retry(() -> {
             try (OutputListener.Write write = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("status.json")))) {
-                SshUtil.run(controllerSession, "curl " + (protocol == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --silent --insecure " + statusUri, write);
+                SshUtil.run(controllerSession, curlBase + statusUri, write);
+            }
+            return null;
+        });
+        GenericBenchmarkRunner.retry(() -> {
+            String testBody = factory.objectMapper.writeValueAsString(new Input(List.of("foo", "bar"), "ar"));
+            ByteArrayOutputStream resp = new ByteArrayOutputStream();
+            try (OutputListener.Write write = new OutputListener.Write(resp)) {
+                SshUtil.run(controllerSession, curlBase + "-d '" + testBody + "' -H 'Content-Type: application/json' " + findUri, write);
+            }
+            Result result = factory.objectMapper.readValue(resp.toByteArray(), Result.class);
+            if (result.listIndex != 1 || result.stringIndex != 1) {
+                throw new InvalidatesBenchmarkException("Response to test request was incorrect: " + resp.toString(StandardCharsets.UTF_8));
             }
             return null;
         });
@@ -527,4 +543,8 @@ public class HyperfoilRunner implements AutoCloseable {
             }
         }
     }
+
+    private record Input(List<String> haystack, String needle) {}
+
+    private record Result(int listIndex, int stringIndex) {}
 }
