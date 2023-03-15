@@ -4,7 +4,7 @@ foo="bar"
 [ssh]
 # DO NOT use a valuable key here. It is uploaded to the hyperfoil controller for agent provisioning. If you don't need
 # this for debugging, simply leave this property unset, and a fresh generated key pair will be used.
-private-key-location="/home/yawkat/.ssh/id_rsa"
+#private-key-location="/home/yawkat/.ssh/id_rsa"
 
 [suite]
 # the compartment to run the benchmark suite in. the compartment should be empty; it will be cleared before and after each run.
@@ -20,32 +20,32 @@ enabled-run-types=[
     "vertx-hotspot",
 ]
 # independent repetitions of each benchmark
-repetitions=5
+repetitions=8
 
 # configuration for the benchmark load. applies to all frameworks.
 [load]
 # protocols to test
 protocols=[
     "HTTP1",
-    "HTTPS1",
-    "HTTPS2",
+    #"HTTPS1",
+    #"HTTPS2",
 ]
 # different json body sizes to test
 [[load.documents]]
 string-count=6
 string-length=6
-[[load.documents]]
-string-count=1000
-string-length=6
-[[load.documents]]
-string-count=100000
-string-length=6
-[[load.documents]]
-string-count=6
-string-length=1000
-[[load.documents]]
-string-count=6
-string-length=100000
+#[[load.documents]]
+#string-count=1000
+#string-length=6
+#[[load.documents]]
+#string-count=100000
+#string-length=6
+#[[load.documents]]
+#string-count=6
+#string-length=1000
+#[[load.documents]]
+#string-count=6
+#string-length=100000
 
 # configuration for the hyperfoil cluster
 [hyperfoil]
@@ -63,18 +63,26 @@ benchmark-duration="1m"
 
 # configuration for the different compute instances for the benchmark
 
+# core limits in my AD:
+# VM.Standard1.1: 438 cores
+# VM.Standard.E4.Flex: 150 cores
+# VM.Standard.E3.Flex: ~90 cores
+
 # instance that the test server runs on
 [compute.instance-types.benchmark-server]
+shape="VM.Standard.E4.Flex"
 ocpus=4
 memory-in-gb=16
 
 # relay server used as an SSH gateway to other servers
 [compute.instance-types.relay-server]
+shape="VM.Standard.E3.Flex"
 ocpus=1
 memory-in-gb=2
 
 # hyperfoil controller
 [compute.instance-types.hyperfoil-controller]
+shape="VM.Standard.E3.Flex"
 ocpus=2
 memory-in-gb=4
 
