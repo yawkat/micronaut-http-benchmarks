@@ -57,12 +57,56 @@ public class Main {
         return null;
     }
 
-    private record Input(List<String> haystack, String needle) {
+    public static final class Input {
+        private List<String> haystack;
+        private String needle;
+
+        public List<String> getHaystack() {
+            return haystack;
+        }
+
+        public void setHaystack(List<String> haystack) {
+            this.haystack = haystack;
+        }
+
+        public String getNeedle() {
+            return needle;
+        }
+
+        public void setNeedle(String needle) {
+            this.needle = needle;
+        }
     }
 
-    private record Result(int listIndex, int stringIndex) {
+    public static final class Result {
+        private int listIndex;
+        private int stringIndex;
+
+        public Result(int listIndex, int stringIndex) {
+            this.listIndex = listIndex;
+            this.stringIndex = stringIndex;
+        }
+
+        public Result() {
+        }
+
+        public int getListIndex() {
+            return listIndex;
+        }
+
+        public void setListIndex(int listIndex) {
+            this.listIndex = listIndex;
+        }
+
+        public int getStringIndex() {
+            return stringIndex;
+        }
+
+        public void setStringIndex(int stringIndex) {
+            this.stringIndex = stringIndex;
+        }
     }
 
-    private record Status() {
+    public static final class Status {
     }
 }
