@@ -70,7 +70,7 @@ public class HyperfoilRunner implements AutoCloseable {
     private ResilientSshPortForwarder controllerPortForward;
 
     static {
-        System.setProperty("io.hyperfoil.cli.request.timeout", "120000");
+        System.setProperty("io.hyperfoil.cli.request.timeout", "30000");
     }
 
     private HyperfoilRunner(Factory factory, Path outputDirectory, OciLocation location, String privateSubnetId) throws Exception {
@@ -170,7 +170,7 @@ public class HyperfoilRunner implements AutoCloseable {
                          new SshdSocketAddress("localhost", 8090)
                  );
                  RestClient client = new RestClient(
-                         Vertx.vertx(),
+                         factory.vertx,
                          controllerPortForward.address().getHostName(),
                          controllerPortForward.address().getPort(),
                          false, true, null)) {
@@ -207,7 +207,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 } finally {
                     LOG.info("Downloading agent logs…");
                     try {
-                        for (String agent : GenericBenchmarkRunner.retry(client::agents)) {
+                        for (String agent : GenericBenchmarkRunner.retry(client::agents, controllerPortForward::disconnect)) {
                             client.downloadLog(agent, null, 0, outputDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
                         }
                     } catch (Exception e) {
@@ -427,6 +427,7 @@ public class HyperfoilRunner implements AutoCloseable {
         private final HyperfoilConfiguration config;
         private final ObjectMapper objectMapper;
         private final ResilientSshPortForwarder.Factory resilientForwarderFactory;
+        private final Vertx vertx;
 
         Factory(Compute compute, SshFactory sshFactory, @Named(TaskExecutors.IO) ExecutorService executor, HyperfoilConfiguration config, ObjectMapper objectMapper, ResilientSshPortForwarder.Factory resilientForwarderFactory) {
             this.compute = compute;
@@ -435,6 +436,7 @@ public class HyperfoilRunner implements AutoCloseable {
             this.config = config;
             this.objectMapper = objectMapper;
             this.resilientForwarderFactory = resilientForwarderFactory;
+            this.vertx = Vertx.vertx();
 
             objectMapper.registerSubtypes(HttpStats.class);
         }
