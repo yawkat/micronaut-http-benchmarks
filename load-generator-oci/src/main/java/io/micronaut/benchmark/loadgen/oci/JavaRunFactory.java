@@ -1,5 +1,6 @@
 package io.micronaut.benchmark.loadgen.oci;
 
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Singleton;
 import org.apache.sshd.client.channel.ChannelExec;
@@ -19,13 +20,16 @@ import java.util.stream.Stream;
 public class JavaRunFactory {
     private static final Logger LOG = LoggerFactory.getLogger(JavaRunFactory.class);
     private static final String SHADOW_JAR_LOCATION = "shadow.jar";
+    private static final String PROFILER_LOCATION = "/tmp/libasyncProfiler.so";
 
     private final HotspotConfiguration hotspotConfiguration;
     private final NativeImageConfiguration nativeImageConfiguration;
+    private final AsyncProfilerConfiguration asyncProfilerConfiguration;
 
-    public JavaRunFactory(HotspotConfiguration hotspotConfiguration, NativeImageConfiguration nativeImageConfiguration) {
+    public JavaRunFactory(HotspotConfiguration hotspotConfiguration, NativeImageConfiguration nativeImageConfiguration, AsyncProfilerConfiguration asyncProfilerConfiguration) {
         this.hotspotConfiguration = hotspotConfiguration;
         this.nativeImageConfiguration = nativeImageConfiguration;
+        this.asyncProfilerConfiguration = asyncProfilerConfiguration;
     }
 
     private static String optionsToString(String opts) {
@@ -47,7 +51,7 @@ public class JavaRunFactory {
         @Nullable
         private Object compileConfiguration;
         private byte[] boundLine;
-        private String additionalNativeImageOptions;
+        private final String additionalNativeImageOptions;
 
         private RunBuilder(String typePrefix) {
             this.typePrefix = typePrefix;
@@ -100,29 +104,49 @@ public class JavaRunFactory {
 
                         @Override
                         public String name() {
-                            return typePrefix + "-hotspot-" + configString + "-" + optionsToString(hotspotOptions);
+                            return typePrefix + "-hotspot-" + configString + "-" + optionsToString(hotspotOptions) + (asyncProfilerConfiguration.isEnabled() ? "-async-profiler" : "");
                         }
 
                         @Override
                         public Object parameters() {
-                            return compileConfiguration;
+                            return new HotspotParameters(compileConfiguration, hotspotOptions);
                         }
 
+                        record HotspotParameters(@JsonUnwrapped Object compileConfiguration, String hotspotOptions) {}
+
                         @Override
-                        public void setupAndRun(ClientSession benchmarkServerClient, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
+                        public void setupAndRun(ClientSession benchmarkServerClient, Path outputDirectory, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
                             progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
                             SshUtil.run(benchmarkServerClient, "sudo yum install jdk-" + hotspotConfiguration.getVersion() + "-headless -y", log);
                             progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
+                            String start = "java ";
+                            if (asyncProfilerConfiguration.isEnabled()) {
+                                SshUtil.run(benchmarkServerClient, "sudo sysctl kernel.perf_event_paranoid=1", log);
+                                SshUtil.run(benchmarkServerClient, "sudo sysctl kernel.kptr_restrict=0", log);
+                                ScpClientCreator.instance().createScpClient(benchmarkServerClient)
+                                        .upload(asyncProfilerConfiguration.getPath(), PROFILER_LOCATION);
+                                start += "-agentpath:" + PROFILER_LOCATION + "=" + asyncProfilerConfiguration.getArgs() + " ";
+                            }
                             LOG.info("Starting benchmark server (hotspot, " + typePrefix + ")");
-                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel("java " + hotspotOptions + " -jar " + SHADOW_JAR_LOCATION)) {
+                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel(start + hotspotOptions + " -jar " + SHADOW_JAR_LOCATION)) {
                                 OutputListener.Waiter waiter = new OutputListener.Waiter(ByteBuffer.wrap(boundLine));
                                 SshUtil.forwardOutput(cmd, log, waiter);
                                 cmd.open().verify();
                                 waiter.awaitWithNextPattern(null);
 
                                 benchmarkClosure.benchmark(progress);
+
+                                SshUtil.interrupt(cmd);
+                                SshUtil.joinAndCheck(cmd, 130);
+                            }
+                            if (asyncProfilerConfiguration.isEnabled()) {
+                                LOG.info("Downloading async-profiler results");
+                                for (String output : asyncProfilerConfiguration.getOutputs()) {
+                                    ScpClientCreator.instance().createScpClient(benchmarkServerClient)
+                                            .download(output, outputDirectory.resolve(output));
+                                }
                             }
                         }
                     }),
@@ -139,11 +163,13 @@ public class JavaRunFactory {
 
                         @Override
                         public Object parameters() {
-                            return compileConfiguration;
+                            return new NativeImageParameters(compileConfiguration, nativeImageOptions);
                         }
 
+                        record NativeImageParameters(@JsonUnwrapped Object compileConfiguration, String nativeImageOptions) {}
+
                         @Override
-                        public void setupAndRun(ClientSession benchmarkServerClient, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
+                        public void setupAndRun(ClientSession benchmarkServerClient, Path outputDirectory, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
 
                             progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
                             SshUtil.run(benchmarkServerClient, "sudo yum install graalvm22-ee-17-jdk -y", log);

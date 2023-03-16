@@ -3,6 +3,8 @@ package io.micronaut.benchmark.loadgen.oci;
 import io.micronaut.core.annotation.Nullable;
 import org.apache.sshd.client.session.ClientSession;
 
+import java.nio.file.Path;
+
 public interface FrameworkRun {
     String type();
 
@@ -13,6 +15,7 @@ public interface FrameworkRun {
 
     void setupAndRun(
             ClientSession benchmarkServerClient,
+            Path outputDirectory,
             OutputListener.Write log,
             BenchmarkClosure benchmarkClosure,
             PhaseTracker.PhaseUpdater progress) throws Exception;

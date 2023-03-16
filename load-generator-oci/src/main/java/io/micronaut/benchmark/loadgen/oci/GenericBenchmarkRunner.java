@@ -200,10 +200,10 @@ public class GenericBenchmarkRunner {
 
                 run.setupAndRun(
                         benchmarkServerClient,
+                        outputDirectory,
                         log,
                         hyperfoilRunner.benchmarkClosure(loadVariant.protocol(), loadVariant.body()),
-                        progress
-                );
+                        progress);
                 progress.update(BenchmarkPhase.SHUTTING_DOWN);
             }
 
