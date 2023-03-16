@@ -3,6 +3,8 @@ package io.micronaut.benchmark.loadgen.oci;
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.core.annotation.Nullable;
+import io.micronaut.scheduling.TaskExecutors;
+import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import org.apache.sshd.client.ClientBuilder;
 import org.apache.sshd.client.SshClient;
@@ -31,6 +33,8 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Singleton
@@ -40,8 +44,10 @@ public class SshFactory {
     private final String publicKey;
     private final String privateKey;
     private final SshClient sshClient;
+    private final ScheduledExecutorService scheduler;
 
-    SshFactory(SshConfiguration config) throws Exception {
+    SshFactory(SshConfiguration config, @Named(TaskExecutors.SCHEDULED) ExecutorService scheduler) throws Exception {
+        this.scheduler = (ScheduledExecutorService) scheduler;
         KeyPair keyPair;
         if (config.getPrivateKeyLocation() == null) {
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
@@ -90,6 +96,17 @@ public class SshFactory {
             try {
                 ClientSession sess = sshClient.connect(new HostConfigEntry("", instanceIp, 22, "opc", relay == null ? null : relay.username + "@" + relay.relayIp + ":22")).verify().getClientSession();
                 sess.auth().verify();
+                scheduler.scheduleWithFixedDelay(() -> {
+                    if (sess.isClosed()) {
+                        // ends the task
+                        throw new RuntimeException("End the task");
+                    }
+                    try {
+                        SshUtil.run(sess, "echo keepalive");
+                    } catch (Exception e) {
+                        LOG.error("Failed to send keepalive", e);
+                    }
+                }, 1, 1, TimeUnit.MINUTES);
                 return sess;
             } catch (SshException e) {
                 // happens before the server has started up
