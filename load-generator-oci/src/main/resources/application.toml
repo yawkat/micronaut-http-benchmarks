@@ -97,6 +97,12 @@ memory-in-gb=7
 version=19
 option-choices=["-XX:+UseG1GC -Xmx1G --enable-preview"]
 
+[variants.hotspot.async-profiler]
+enabled=false
+path="/home/yawkat/bin/async-profiler-2.9-linux-x64/build/libasyncProfiler.so"
+args="start,event=cpu,file=flamegraph.html"
+outputs=["flamegraph.html"]
+
 [variants.native-image]
 # these are native-image options that are benchmarked against each other
 option-choices=["--gc=G1"]
