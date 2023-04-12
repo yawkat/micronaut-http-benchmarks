@@ -19,6 +19,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.timeout.ReadTimeoutException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,6 +32,16 @@ public class RequestHandler extends SimpleChannelInboundHandler<FullHttpRequest>
     private final ObjectReader reader = new ObjectMapper().readerFor(Input.class);
     private final ObjectWriter writerResult = new ObjectMapper().writerFor(Result.class);
     private final ObjectWriter writerStatus = new ObjectMapper().writerFor(Status.class);
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        if (cause instanceof ReadTimeoutException) {
+            // ignore
+            ctx.close();
+        } else {
+            super.exceptionCaught(ctx, cause);
+        }
+    }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest msg) throws Exception {

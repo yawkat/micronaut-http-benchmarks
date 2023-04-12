@@ -27,13 +27,14 @@ configure<io.micronaut.bench.AppVariants> {
             variant("off")
             variant("on")
         }
-        dimension("epoll") {
-            variant("off")
-            //variant("on")
+        dimension("transport") {
+            variant("nio")
+            variant("epoll")
+            variant("iouring")
         }
         dimension("json") {
             variant("jackson")
-            //variant("serde")
+            variant("serde")
         }
         dimension("micronaut") {
             variant("3.8")

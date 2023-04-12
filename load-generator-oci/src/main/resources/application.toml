@@ -119,8 +119,15 @@ tcnative=[
     "on",
     #"off"
 ]
-epoll=["off"]
-json=["jackson"]
+transport=[
+    "nio",
+    #"epoll",
+    "iouring"
+]
+json=[
+    "jackson",
+    #"serde"
+]
 micronaut=[
     "3.8",
     "4.0",

@@ -1,8 +1,12 @@
 package org.example;
 
+import io.netty.util.ResourceLeakDetector;
+
 public class Main {
     @SuppressWarnings("resource")
     public static void main(String[] args) throws Exception {
+        ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.DISABLED);
+
         RequestHandler requestHandler = new RequestHandler();
         HttpServer httpServer = new HttpServer(requestHandler);
         httpServer.bindHttp("0.0.0.0", 8080);

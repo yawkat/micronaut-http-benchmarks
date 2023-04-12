@@ -8,9 +8,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.ServerSocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
@@ -25,6 +23,8 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.incubator.channel.uring.IOUringEventLoopGroup;
+import io.netty.incubator.channel.uring.IOUringServerSocketChannel;
 
 import javax.net.ssl.SSLException;
 import java.net.InetSocketAddress;
@@ -41,9 +41,9 @@ public final class HttpServer implements AutoCloseable {
     public HttpServer(ChannelHandler requestHandler) {
         this.requestHandler = requestHandler;
 
-        group = new NioEventLoopGroup(1);
+        group = new IOUringEventLoopGroup(Runtime.getRuntime().availableProcessors());
         tcpBootstrap = new ServerBootstrap()
-                .channel(NioServerSocketChannel.class)
+                .channel(IOUringServerSocketChannel.class)
                 .group(group)
                 .childOption(ChannelOption.AUTO_READ, true);
     }
