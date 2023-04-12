@@ -53,12 +53,16 @@ agent-count=8
 
 warmup-duration="1m"
 pgo-duration="2m"
-compile-ops=10
+compile-ops=50
+shared-connections=50
+pipelining-limit=50
 
 # different ops/s to try
-ops=[5, 10, 15, 25, 50, 75, 100, 200, 400, 800, 1000, 2000, 4000, 8000, 16000]
+ops=[
+    #5, 10, 15, 25,
+    50, 75, 100, 200, 400, 800, 1000, 2000, 4000, 8000, 16000]
 # duration per ops/s benchmark
-benchmark-duration="1m"
+benchmark-duration="2m"
 
 
 # configuration for the different compute instances for the benchmark

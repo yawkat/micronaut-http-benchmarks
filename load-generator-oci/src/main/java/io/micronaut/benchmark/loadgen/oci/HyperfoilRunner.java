@@ -56,7 +56,7 @@ public class HyperfoilRunner implements AutoCloseable {
     private static final String HYPERFOIL_AGENT_PREFIX = "10.0.1.";
     private static final Path LOCAL_HYPERFOIL_LOCATION = Path.of("/home/yawkat/bin/hyperfoil-0.24.1");
     private static final String REMOTE_HYPERFOIL_LOCATION = "hyperfoil";
-    private static final int SESSION_LIMIT_FACTOR = 5;
+    private static final int SESSION_LIMIT_FACTOR = 10;
 
     private final Factory factory;
     private final CompletableFuture<SshFactory.Relay> relay = new CompletableFuture<>();
@@ -289,7 +289,8 @@ public class HyperfoilRunner implements AutoCloseable {
                 .port(port)
                 .allowHttp1x(protocol != Protocol.HTTPS2)
                 .allowHttp2(protocol == Protocol.HTTPS2)
-                .sharedConnections(50);
+                .sharedConnections(factory.config.sharedConnections)
+                .pipeliningLimit(factory.config.pipeliningLimit);
 
         List<String> phaseNames = new ArrayList<>();
         if (!forPgo) {
@@ -455,6 +456,8 @@ public class HyperfoilRunner implements AutoCloseable {
 
         private int compileOps;
         private List<Integer> ops;
+        private int sharedConnections;
+        private int pipeliningLimit;
 
         public int getCompileOps() {
             return compileOps;
@@ -502,6 +505,22 @@ public class HyperfoilRunner implements AutoCloseable {
 
         public void setOps(List<Integer> ops) {
             this.ops = ops;
+        }
+
+        public int getSharedConnections() {
+            return sharedConnections;
+        }
+
+        public void setSharedConnections(int sharedConnections) {
+            this.sharedConnections = sharedConnections;
+        }
+
+        public int getPipeliningLimit() {
+            return pipeliningLimit;
+        }
+
+        public void setPipeliningLimit(int pipeliningLimit) {
+            this.pipeliningLimit = pipeliningLimit;
         }
     }
 
