@@ -98,7 +98,7 @@ ocpus=1
 memory-in-gb=7
 
 [variants.hotspot]
-version=19
+version=20
 option-choices=["-XX:+UseG1GC -Xmx1G --enable-preview"]
 
 [variants.hotspot.async-profiler]
