@@ -56,6 +56,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
@@ -98,7 +99,6 @@ public class SuiteRunner {
     }
 
     public void clean() {
-
         cleanCompartment(suiteConfiguration.compartment, false);
     }
 
@@ -113,6 +113,7 @@ public class SuiteRunner {
         List<Callable<Void>> allTasks = new ArrayList<>();
         List<BenchmarkParameters> index = new ArrayList<>();
         PhaseTracker phaseTracker = new PhaseTracker(objectMapper, outputDir);
+        Semaphore semaphore = new Semaphore(suiteConfiguration.maxConcurrentRuns);
         for (FrameworkRunSet framework : frameworks) {
             for (FrameworkRun run : framework.getRuns()) {
                 if (!suiteConfiguration.enabledRunTypes.contains(run.type())) {
@@ -124,17 +125,22 @@ public class SuiteRunner {
                         index.add(new BenchmarkParameters(name, run.type(), run.parameters(), loadVariant, repetition));
                         PhaseTracker.PhaseUpdater phaseUpdater = phaseTracker.updater(name);
                         phaseUpdater.update(BenchmarkPhase.BEFORE);
-                        allTasks.add(() -> MdcTracker.withMdc(name, () -> {
-                            // we could use a child compartment here, but compartments seem to be heavily throttled
-                            try {
-                                benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, phaseUpdater);
-                            } catch (Exception e) {
-                                phaseUpdater.update(BenchmarkPhase.FAILED);
-                                LOG.error("Failed to run benchmark", e);
-                                executor.shutdownNow();
-                            }
+                        allTasks.add(() -> {
+                            semaphore.acquire();
+                            MdcTracker.withMdc(name, () -> {
+                                // we could use a child compartment here, but compartments seem to be heavily throttled
+                                try {
+                                    benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, phaseUpdater);
+                                } catch (Exception e) {
+                                    phaseUpdater.update(BenchmarkPhase.FAILED);
+                                    LOG.error("Failed to run benchmark", e);
+                                    executor.shutdownNow();
+                                }
+                                return null;
+                            });
+                            semaphore.release();
                             return null;
-                        }));
+                        });
                     }
                 }
             }
@@ -405,6 +411,7 @@ public class SuiteRunner {
         private String compartment;
         private List<String> enabledRunTypes;
         private int repetitions;
+        private int maxConcurrentRuns;
 
         public int getRepetitions() {
             return repetitions;
@@ -436,6 +443,14 @@ public class SuiteRunner {
 
         public void setEnabledRunTypes(List<String> enabledRunTypes) {
             this.enabledRunTypes = enabledRunTypes;
+        }
+
+        public int getMaxConcurrentRuns() {
+            return maxConcurrentRuns;
+        }
+
+        public void setMaxConcurrentRuns(int maxConcurrentRuns) {
+            this.maxConcurrentRuns = maxConcurrentRuns;
         }
     }
 
