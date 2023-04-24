@@ -17,5 +17,5 @@ micronaut:
           ssl: true
       event-loops:
         default:
-          #num-threads: 1
+          num-threads: 4 # must match compute instance config
           prefer-native-transport: true
