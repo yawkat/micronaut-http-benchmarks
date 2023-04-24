@@ -12,15 +12,17 @@ compartment="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gl
 availability-domain="hkYI:PHX-AD-3"
 enabled-run-types=[
     "mn-hotspot",
-    "mn-native",
+    #"mn-native",
     "pure-netty-hotspot",
     #"pure-netty-native", broken
     "helidon-nima-hotspot",
     "spring-boot-hotspot",
     "vertx-hotspot",
+    #"vertx-native",
 ]
 # independent repetitions of each benchmark
 repetitions=8
+max-concurrent-runs=25
 
 # configuration for the benchmark load. applies to all frameworks.
 [load]
