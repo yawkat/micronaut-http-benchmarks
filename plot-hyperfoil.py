@@ -39,13 +39,6 @@ def generate_percentile_ticks(limit):
         i += 1
 
 
-def load_histogram(benchmark_id: str, phase: str):
-    run_data = load_run(benchmark_id)
-    selected_phase = find_phase(run_data, phase)
-    if selected_phase is None:
-        return None
-    return selected_phase["histogram"]["percentiles"]
-
 
 def plot_histogram(ax: matplotlib.pyplot.Axes, percentiles, scale: float = 1, color: typing.Optional[str] = None, label: typing.Optional[str] = None):
     percentiles = [p for p in percentiles if p["percentile"] != 1]
@@ -162,6 +155,9 @@ def ns_to_str(ns: int) -> str:
 
 # matches application.toml hyperfoil.ops
 OPS = [5, 10, 15, 25, 50, 75, 100, 200, 400, 800, 1000, 2000, 4000, 8000, 16000]
+MODE_HISTOGRAM = "histogram"
+MODE_SIMPLE = "simple"
+SIMPLE_OPS = 1000
 
 
 def main():
@@ -169,13 +165,19 @@ def main():
         index = json.load(f)
     index = sorted(index, key=lambda i: i["name"])
     index = [i for i in index if not has_error(i["name"])]
-    rows = 4
-    cols = int(np.ceil(len(OPS) / rows))
-    fig, axs = plt.subplots(rows, cols)
-    discriminator_properties = [("type",), ("parameters", "micronaut")]
+    discriminator_properties = [("type",), ("parameters", "compileConfiguration", "micronaut"), ("parameters", "compileConfiguration", "json"), ("parameters", "compileConfiguration", "transport")]
     filter_properties = {
         #("type",): "mn-hotspot"
     }
+    combine_runs = True
+    mode = MODE_HISTOGRAM
+
+    if mode == MODE_HISTOGRAM:
+        rows = 4
+        cols = int(np.ceil(len(OPS) / rows))
+        fig, axs = plt.subplots(rows, cols)
+    elif mode == MODE_SIMPLE:
+        ax = plt.subplot()
 
     def get_discriminator_tuple(index_item: dict):
         return tuple(get_index_property(index_item, k) for k in discriminator_properties)
@@ -209,64 +211,105 @@ def main():
         discriminator_tuple = get_discriminator_tuple(run)
         if discriminator_tuple not in discriminated:
             discriminated.append(discriminator_tuple)
-    max_time = 2*10**6
-    max_percentile = 0.999
-    print(min_time, max_time)
+        max_time = 0.5*10**6
+        max_percentile = 0.999
+        print(min_time, max_time)
     colors_by_discriminator = {d: f'C{i}' for i, d in enumerate(discriminated)}
 
     for phase_i, ops in enumerate(OPS):
         phase = f"main/{phase_i}"
-        ax: matplotlib.axes.Axes = axs[phase_i // len(axs[0])][phase_i % len(axs[0])]
-
-        any_shown = False
-        for disc_tuple in discriminated:
-            runs_for_discriminator = [run for run in index if not matches(filter_properties, run) and get_discriminator_tuple(run) == disc_tuple]
-            disc_histograms = []
-            for run in runs_for_discriminator:
-                print(f"Plotting {phase} {run['name']}")
-                histogram = load_histogram(run["name"], phase)
-                if histogram is not None:
-                    if disc_histograms is not None:
-                        disc_histograms.append(histogram)
-                    #plot_histogram(
-                    #    ax, histogram,
-                    #    color=colors_by_discriminator[disc_tuple]
-                    #)
-                    #any_shown = True
-                else:
-                    disc_histograms = None
-                    print(" (no data)")
-            if disc_histograms is not None:
-                plot_histogram(
-                    ax, combine_histograms(disc_histograms),
-                    color=colors_by_discriminator[disc_tuple],
-                )
-                any_shown = True
-        if any_shown:
-            ax.set_title(f"{ops} ops/s")
-
+        if mode == MODE_HISTOGRAM:
+            ax: matplotlib.axes.Axes = axs[phase_i // len(axs[0])][phase_i % len(axs[0])]
             percentile_ticks = list(generate_percentile_ticks(max_percentile))
             ax.set_xscale("function", functions=(percentile_transform, percentile_transform_reverse))
             ax.set_xticks(percentile_ticks, [str(p) for p in percentile_ticks])
-            ax.set_ylabel("Request time")
             ax.set_xlim(0, max_percentile)
+            #ax.set_yscale("log")
+            ax.set_ylabel("Request time")
             ax.yaxis.set_major_formatter(lambda ns, _: ns_to_str(ns))
-            # ax.set_yscale("log")
-            ax.set_ylim(min_time * 0.9, max_time)
-            ax.axvline(0.5)
-            if phase_i == 0:
-                ax.legend(handles=[
-                    matplotlib.patches.Patch(color=v, label=" ".join(map(str, k)))
-                    for k, v in colors_by_discriminator.items()
-                ])
-        else:
-            ax.remove()
+            ax.set_ylim(min_time, max_time)
 
-    for r in range(rows):
-        for c in range(cols):
-            if c + r * rows >= len(OPS):
-                axs[r][c].remove()
-    plt.xlabel("Percentile")
+            any_shown = False
+            for i, disc_tuple in enumerate(discriminated):
+                runs_for_discriminator = [run for run in index if not matches(filter_properties, run) and get_discriminator_tuple(run) == disc_tuple]
+                disc_histograms = []
+                disc_medians = []
+                disc_averages = []
+                for run in runs_for_discriminator:
+                    print(f"Plotting {phase} {run['name']}")
+                    run_data = load_run(run["name"])
+                    selected_phase = find_phase(run_data, phase)
+                    if selected_phase is not None:
+                        histogram = selected_phase["histogram"]["percentiles"]
+                        disc_medians.append([p for p in histogram if p["percentile"] >= 0.5][0]["to"])
+                        disc_averages.append(selected_phase["total"]["summary"]["meanResponseTime"])
+                        if disc_histograms is not None:
+                            disc_histograms.append(histogram)
+                        if not combine_runs:
+                            plot_histogram(
+                                ax, histogram,
+                                color=colors_by_discriminator[disc_tuple]
+                            )
+                            any_shown = True
+                    else:
+                        disc_histograms = None
+                        print(" (no data)")
+                if disc_histograms is not None and combine_runs:
+                    plot_histogram(
+                        ax, combine_histograms(disc_histograms),
+                        color=colors_by_discriminator[disc_tuple],
+                    )
+                    any_shown = True
+                if len(disc_medians) != 0:
+                    ax.plot(
+                        [percentile_transform_reverse(percentile_transform(max_percentile) - (i + 1) * 0.1) for _ in disc_medians],
+                        disc_averages,
+                        'x',
+                        color=colors_by_discriminator[disc_tuple]
+                    )
+                    ax.plot(
+                        [percentile_transform_reverse(percentile_transform(max_percentile) - (i + 1) * 0.1 - 0.05) for _ in disc_medians],
+                        disc_medians,
+                        '+',
+                        color=colors_by_discriminator[disc_tuple]
+                    )
+                    any_shown = True
+            if any_shown:
+                ax.set_title(f"{ops} ops/s")
+
+                ax.axvline(0.5)
+                if phase_i == 0:
+                    ax.legend(handles=[
+                                          matplotlib.patches.Patch(color=v, label=" ".join(map(str, k)))
+                                          for k, v in colors_by_discriminator.items()
+                                      ] + [matplotlib.patches.Patch(
+                        color="black",
+                        label="average"
+                    )])
+            else:
+                ax.remove()
+        elif mode == MODE_SIMPLE:
+            if ops == SIMPLE_OPS:
+                ax: matplotlib.axes.Axes
+                ax.set_title(f"{ops} ops/s")
+                ax.set_ylabel("Request time")
+                ax.yaxis.set_major_formatter(lambda ns, _: ns_to_str(ns))
+                ax.tick_params(axis='x', rotation=90)
+                ax.grid(axis="y")
+                for i, disc_tuple in enumerate(discriminated):
+                    runs_for_discriminator = [run for run in index if not matches(filter_properties, run) and get_discriminator_tuple(run) == disc_tuple]
+                    run_data = [load_run(run["name"]) for run in runs_for_discriminator]
+                    phase_data = [find_phase(run, phase) for run in run_data]
+                    ax.boxplot([[phase["total"]["summary"]["meanResponseTime"] for phase in phase_data if phase is not None]], vert=True, positions=[i], labels=[" ".join(map(str, disc_tuple))], showbox=False, showmeans=True)
+
+    if mode == MODE_HISTOGRAM:
+        for r in range(rows):
+            for c in range(cols):
+                if c + r * rows >= len(OPS):
+                    axs[r][c].remove()
+        plt.xlabel("Percentile")
+    elif mode == MODE_SIMPLE:
+        plt.tight_layout()
     plt.show()
 
 
