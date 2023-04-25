@@ -62,7 +62,7 @@ public class HyperfoilRunner implements AutoCloseable {
     private final CompletableFuture<SshFactory.Relay> relay = new CompletableFuture<>();
     private final CompletableFuture<Client> client = new CompletableFuture<>();
     private final CompletableFuture<Void> terminate = new CompletableFuture<>();
-    private final Path outputDirectory;
+    private final Path logDirectory;
     private final HyperfoilInstances instances;
     private final Future<?> worker;
     private final List<Compute.Instance> computeInstances = new CopyOnWriteArrayList<>();
@@ -73,9 +73,9 @@ public class HyperfoilRunner implements AutoCloseable {
         System.setProperty("io.hyperfoil.cli.request.timeout", "30000");
     }
 
-    private HyperfoilRunner(Factory factory, Path outputDirectory, OciLocation location, String privateSubnetId) throws Exception {
+    private HyperfoilRunner(Factory factory, Path logDirectory, OciLocation location, String privateSubnetId) throws Exception {
         this.factory = factory;
-        this.outputDirectory = outputDirectory;
+        this.logDirectory = logDirectory;
 
         // fail fast if we can't create the instances
         instances = createInstances(location, privateSubnetId);
@@ -131,7 +131,7 @@ public class HyperfoilRunner implements AutoCloseable {
         SshFactory.Relay relay = this.relay.get();
 
         try (
-                OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("hyperfoil.log")));
+                OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(logDirectory.resolve("hyperfoil.log")));
                 ClientSession controllerSession = factory.sshFactory.connect(instances.controller, HYPERFOIL_CONTROLLER_IP, relay)) {
             this.controllerSession = controllerSession;
 
@@ -208,7 +208,7 @@ public class HyperfoilRunner implements AutoCloseable {
                     LOG.info("Downloading agent logs…");
                     try {
                         for (String agent : GenericBenchmarkRunner.retry(client::agents, controllerPortForward::disconnect)) {
-                            client.downloadLog(agent, null, 0, outputDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
+                            client.downloadLog(agent, null, 0, logDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
                         }
                     } catch (Exception e) {
                         LOG.error("Failed to download agent logs", e);
@@ -229,21 +229,21 @@ public class HyperfoilRunner implements AutoCloseable {
         this.relay.complete(relay);
     }
 
-    public FrameworkRun.BenchmarkClosure benchmarkClosure(Protocol protocol, byte[] body) {
+    public FrameworkRun.BenchmarkClosure benchmarkClosure(Path outputDirectory, Protocol protocol, byte[] body) {
         return new FrameworkRun.BenchmarkClosure() {
             @Override
             public void benchmark(PhaseTracker.PhaseUpdater progress) throws Exception {
-                HyperfoilRunner.this.benchmark(protocol, body, progress, false);
+                HyperfoilRunner.this.benchmark(outputDirectory, protocol, body, progress, false);
             }
 
             @Override
             public void pgoLoad(PhaseTracker.PhaseUpdater progress) throws Exception {
-                HyperfoilRunner.this.benchmark(protocol, body, progress, true);
+                HyperfoilRunner.this.benchmark(outputDirectory, protocol, body, progress, true);
             }
         };
     }
 
-    private void benchmark(Protocol protocol, byte[] body, PhaseTracker.PhaseUpdater progress, boolean forPgo) throws Exception {
+    private void benchmark(Path outputDirectory, Protocol protocol, byte[] body, PhaseTracker.PhaseUpdater progress, boolean forPgo) throws Exception {
         BenchmarkPhase benchmarkPhase = forPgo ? BenchmarkPhase.PGO : BenchmarkPhase.BENCHMARKING;
 
         progress.update(benchmarkPhase);
@@ -280,7 +280,6 @@ public class HyperfoilRunner implements AutoCloseable {
         for (int i = 0; i < factory.config.agentCount; i++) {
             benchmark.addAgent("agent" + i, agentIp(i) + ":22", Map.of());
         }
-
 
         benchmark.addPlugin(HttpPluginBuilder::new)
                 .http()
