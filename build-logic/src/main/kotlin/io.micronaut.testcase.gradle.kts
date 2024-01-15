@@ -3,7 +3,6 @@
  * it as a Micronaut application. It should define the "common" code
  * for all benchmarks.
  */
-import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
 
 plugins {
     id("io.micronaut.application")
@@ -49,6 +48,7 @@ tasks.withType<Jar>().configureEach {
     archiveBaseName.set(artifactName)
 }
 
+/*
 graalvmNative {
     toolchainDetection.set(false)
     binaries.all {
@@ -65,6 +65,7 @@ graalvmNative {
         }
     }
 }
+*/
 
 // The following configurations are used to aggregate the shadowJar and nativeImage tasks
 // So that the root project can collect them all in a single directory
@@ -75,8 +76,10 @@ val shadowJars by configurations.creating {
     outgoing.artifact(tasks.named("shadowJar"))
 }
 
+/*
 val nativeImages by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
     outgoing.artifact(tasks.named("nativeCompile"))
 }
+ */

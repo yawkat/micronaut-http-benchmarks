@@ -16,18 +16,18 @@ repositories {
 dependencies {
     runtimeOnly("org.yaml:snakeyaml")
     implementation("io.micronaut.oraclecloud:micronaut-oraclecloud-sdk")
+    implementation("io.micronaut.oraclecloud:micronaut-oraclecloud-bmc-identity")
+    implementation("io.micronaut.oraclecloud:micronaut-oraclecloud-bmc-core")
     implementation("io.micronaut.toml:micronaut-toml")
     implementation("io.micronaut:micronaut-jackson-databind")
     implementation("io.micronaut:micronaut-http-client")
-    implementation("com.oracle.oci.sdk:oci-java-sdk-core:3.4.0")
-    implementation("com.oracle.oci.sdk:oci-java-sdk-identity:3.4.0")
     implementation("io.hyperfoil:hyperfoil-api:0.24.1")
     implementation("io.hyperfoil:hyperfoil-core:0.24.1")
     implementation("io.hyperfoil:hyperfoil-clustering:0.24.1")
 }
 
 micronaut {
-    version("4.0.0-SNAPSHOT")
+    version("4.2.3")
     testRuntime("junit5")
     processing {
         incremental(true)

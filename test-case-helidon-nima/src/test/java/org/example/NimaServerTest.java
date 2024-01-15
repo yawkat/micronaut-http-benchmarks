@@ -1,7 +1,7 @@
 package org.example;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import io.helidon.nima.webserver.WebServer;
+import io.helidon.webserver.WebServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;

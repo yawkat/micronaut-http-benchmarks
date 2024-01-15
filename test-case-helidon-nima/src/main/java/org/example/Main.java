@@ -1,11 +1,14 @@
 package org.example;
 
-import io.helidon.common.http.Http;
-import io.helidon.nima.common.tls.Tls;
-import io.helidon.nima.http2.webserver.Http2ConnectionProvider;
-import io.helidon.nima.webserver.WebServer;
-import io.helidon.nima.webserver.http.HttpRouting;
-import io.helidon.nima.webserver.http1.Http1ConnectionProvider;
+import io.helidon.common.config.Config;
+import io.helidon.common.tls.Tls;
+import io.helidon.webserver.WebServer;
+import io.helidon.webserver.WebServerConfig;
+import io.helidon.webserver.http.HttpRouting;
+import io.helidon.webserver.http1.Http1Config;
+import io.helidon.webserver.http1.Http1ConnectionSelector;
+import io.helidon.webserver.http2.Http2Config;
+import io.helidon.webserver.http2.Http2ConnectionSelector;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 
 import java.security.cert.CertificateException;
@@ -19,31 +22,31 @@ public class Main {
 
     static WebServer start(int httpPort, int httpsPort) throws CertificateException {
         SelfSignedCertificate ssc = new SelfSignedCertificate();
-        HttpRouting routing = HttpRouting.builder()
+        HttpRouting.Builder routing = HttpRouting.builder()
                 .post("/search/find", (req, res) -> {
                     Input input = req.content().as(Input.class);
                     Result result = find(input.haystack, input.needle);
                     if (result == null) {
-                        res.status(Http.Status.NOT_FOUND_404).send();
+                        res.status(io.helidon.http.Status.NOT_FOUND_404).send();
                     } else {
                         res.send(result);
                     }
                 })
-                .get("/status", (req, res) -> res.send(new Status()))
-                .build();
-        WebServer.Builder builder = WebServer.builder()
-                .addConnectionProvider(Http1ConnectionProvider.builder().build())
-                .addConnectionProvider(Http2ConnectionProvider.builder().build())
-                .socket("http", s -> s.host("0.0.0.0").port(httpPort))
-                .socket("https", s -> s.tls(Tls.builder()
+                .get("/status", (req, res) -> res.send(new Status()));
+        WebServerConfig.Builder builder = WebServer.builder()
+                .config(Config.empty())
+                .putSocket("http", s -> s.host("0.0.0.0").port(httpPort).routing(routing)
+                        .addConnectionSelector(Http1ConnectionSelector.builder().config(Http1Config.builder().build()).build()))
+                .putSocket("https", s -> s.tls(Tls.builder()
                         .applicationProtocols(List.of("h2", "http/1.1"))
                         .privateKey(ssc.key())
                         .privateKeyCertChain(List.of(ssc.cert()))
                         .build())
-                        .host("0.0.0.0").port(httpsPort));
-        builder.routerBuilder("http").addRouting(routing);
-        builder.routerBuilder("https").addRouting(routing);
-        return builder.start();
+                        .host("0.0.0.0").port(httpsPort)
+                        .addConnectionSelector(Http1ConnectionSelector.builder().config(Http1Config.builder().build()).build())
+                        .addConnectionSelector(Http2ConnectionSelector.builder().http2Config(Http2Config.builder().build()).build())
+                        .routing(routing));
+        return builder.build().start();
     }
 
     private static Result find(List<String> haystack, String needle) {

@@ -13,7 +13,7 @@ application {
 }
 
 dependencies {
-    implementation("org.springframework.boot:spring-boot-starter-web:3.0.4")
+    implementation("org.springframework.boot:spring-boot-starter-web:3.2.1")
     runtimeOnly("ch.qos.logback:logback-classic:1.4.5")
     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.9.2")
 }

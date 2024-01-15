@@ -37,16 +37,11 @@ configure<io.micronaut.bench.AppVariants> {
             variant("serde")
         }
         dimension("micronaut") {
-            variant("3.8")
-            variant("4.0")
+            variant("4.3")
         }
         dimension("java") {
             //variant("11")
             variant("17")
-        }
-        exclude {
-            // Combination of Micronaut 4 and Java 11 is invalid
-            it.contains("micronaut-4.0") && it.contains("java-11")
         }
     }
 }

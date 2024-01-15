@@ -253,7 +253,7 @@ public class Compute {
             private String shape = "VM.Standard.E4.Flex";
             private float ocpus = 2.0f;
             private float memoryInGb = 8.0f;
-            private String image = "Oracle-Linux-9.0-2022.12.16-0";
+            private String image = "Oracle-Linux-9.2-2023.12.08-0";
 
             public String getShape() {
                 return shape;

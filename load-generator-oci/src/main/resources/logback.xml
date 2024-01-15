@@ -15,6 +15,8 @@
     <logger name="org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier" level="ERROR"/>
     <logger name="org.apache.sshd.common.forward.DefaultForwarder" level="ERROR"/>
     <logger name="org.apache.sshd.client.channel.ClientChannelPendingMessagesQueue" level="ERROR"/>
+    <logger name="com.oracle.bmc.core.model.InstanceShapeConfig$BaselineOcpuUtilization" level="ERROR"/>
+    <logger name="com.oracle.bmc.core.model.Image$ListingType" level="ERROR"/>
     <logger name="com.oracle.bmc" level="WARN"/>
 </configuration>
 
