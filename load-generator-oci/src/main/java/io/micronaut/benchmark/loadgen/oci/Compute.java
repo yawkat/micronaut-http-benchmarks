@@ -23,6 +23,8 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Singleton
 public class Compute {
@@ -112,7 +114,8 @@ public class Compute {
                                     .imageId(image.getId())
                                     .metadata(Map.of(
                                             "ssh_authorized_keys",
-                                            publicKey
+                                            Stream.concat(computeConfiguration.debugAuthorizedKeys.stream(), Stream.of(publicKey))
+                                                    .collect(Collectors.joining("\n"))
                                     ))
                                     .launchOptions(LaunchOptions.builder()
                                             .networkType(LaunchOptions.NetworkType.Vfio)
@@ -239,6 +242,7 @@ public class Compute {
     @ConfigurationProperties("compute")
     public static class ComputeConfiguration {
         private List<InstanceType> instanceTypes;
+        private List<String> debugAuthorizedKeys = List.of();
 
         public List<InstanceType> getInstanceTypes() {
             return instanceTypes;
@@ -246,6 +250,14 @@ public class Compute {
 
         public void setInstanceTypes(List<InstanceType> instanceTypes) {
             this.instanceTypes = instanceTypes;
+        }
+
+        public List<String> getDebugAuthorizedKeys() {
+            return debugAuthorizedKeys;
+        }
+
+        public void setDebugAuthorizedKeys(List<String> debugAuthorizedKeys) {
+            this.debugAuthorizedKeys = debugAuthorizedKeys;
         }
 
         @EachProperty("instance-types")
