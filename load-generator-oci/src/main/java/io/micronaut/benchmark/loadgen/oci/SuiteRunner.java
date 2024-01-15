@@ -69,7 +69,7 @@ public class SuiteRunner {
     private final IdentityClient identityClient;
     private final ComputeClient computeClient;
     private final VirtualNetworkClient vcnClient;
-    private final GenericBenchmarkRunner benchmarkRunner;
+    private final Infrastructure.Factory infraFactory;
     private final LoadManager loadManager;
     private final List<FrameworkRunSet> frameworks;
     private final ExecutorService executor;
@@ -80,16 +80,17 @@ public class SuiteRunner {
     public SuiteRunner(IdentityClient identityClient,
                        ComputeClient computeClient,
                        VirtualNetworkClient vcnClient,
-                       GenericBenchmarkRunner benchmarkRunner,
+                       Infrastructure.Factory infraFactory,
                        LoadManager loadManager,
                        List<FrameworkRunSet> frameworks,
                        @Named(TaskExecutors.IO) ExecutorService executor,
                        SuiteConfiguration suiteConfiguration,
-                       ObjectMapper objectMapper, Compute compute) {
+                       ObjectMapper objectMapper,
+                       Compute compute) {
         this.identityClient = identityClient;
         this.computeClient = computeClient;
         this.vcnClient = vcnClient;
-        this.benchmarkRunner = benchmarkRunner;
+        this.infraFactory = infraFactory;
         this.loadManager = loadManager;
         this.frameworks = frameworks;
         this.executor = executor;
@@ -112,25 +113,43 @@ public class SuiteRunner {
         List<LoadVariant> loadVariants = loadManager.getLoadVariants();
         List<Callable<Void>> allTasks = new ArrayList<>();
         List<BenchmarkParameters> index = new ArrayList<>();
+        List<Infrastructure> sharedInfra = new ArrayList<>();
         PhaseTracker phaseTracker = new PhaseTracker(objectMapper, outputDir);
         Semaphore semaphore = new Semaphore(suiteConfiguration.maxConcurrentRuns);
-        for (FrameworkRunSet framework : frameworks) {
-            for (FrameworkRun run : framework.getRuns()) {
-                if (!suiteConfiguration.enabledRunTypes.contains(run.type())) {
-                    continue;
-                }
-                for (LoadVariant loadVariant : loadVariants) {
-                    for (int repetition = 0; repetition < suiteConfiguration.repetitions; repetition++) {
+        OciLocation location = new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain);
+        for (int repetition = 0; repetition < suiteConfiguration.repetitions; repetition++) {
+            Infrastructure repInfra;
+            if (suiteConfiguration.infrastructureMode == InfrastructureMode.REUSE) {
+                repInfra = infraFactory.create(location, outputDir.resolve("infra-" + repetition));
+                sharedInfra.add(repInfra);
+            } else {
+                repInfra = null;
+            }
+            for (FrameworkRunSet framework : frameworks) {
+                for (FrameworkRun run : framework.getRuns()) {
+                    if (!suiteConfiguration.enabledRunTypes.contains(run.type())) {
+                        continue;
+                    }
+                    for (LoadVariant loadVariant : loadVariants) {
                         String name = run.name() + "-" + loadVariant.name() + "-" + repetition;
                         index.add(new BenchmarkParameters(name, run.type(), run.parameters(), loadVariant, repetition));
                         PhaseTracker.PhaseUpdater phaseUpdater = phaseTracker.updater(name);
                         phaseUpdater.update(BenchmarkPhase.BEFORE);
+                        Path out = outputDir.resolve(name);
                         allTasks.add(() -> {
-                            semaphore.acquire();
                             MdcTracker.withMdc(name, () -> {
                                 // we could use a child compartment here, but compartments seem to be heavily throttled
                                 try {
-                                    benchmarkRunner.run(outputDir.resolve(name), new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain), run, loadVariant, phaseUpdater);
+                                    if (suiteConfiguration.infrastructureMode == InfrastructureMode.REUSE) {
+                                        assert repInfra != null;
+                                        repInfra.run(out, run, loadVariant, phaseUpdater);
+                                    } else {
+                                        semaphore.acquire();
+                                        try (Infrastructure infra = infraFactory.create(location, out)) {
+                                            infra.run(out, run, loadVariant, phaseUpdater);
+                                        }
+                                        semaphore.release();
+                                    }
                                 } catch (Exception e) {
                                     phaseUpdater.update(BenchmarkPhase.FAILED);
                                     LOG.error("Failed to run benchmark", e);
@@ -138,7 +157,6 @@ public class SuiteRunner {
                                 }
                                 return null;
                             });
-                            semaphore.release();
                             return null;
                         });
                     }
@@ -157,12 +175,23 @@ public class SuiteRunner {
         Path newIndex = outputDir.resolve("index.new.json");
         objectMapper.writeValue(newIndex.toFile(), index);
         // use try-with-resources to clean the compartment
-        try (CloseableCompartment ignored = new CloseableCompartment(suiteConfiguration.compartment, false)) {
+        CloseableCompartment compartment = new CloseableCompartment(suiteConfiguration.compartment, false);
+        //noinspection TryFinallyCanBeTryWithResources
+        try {
             List<Future<Void>> futures = executor.invokeAll(allTasks);
             for (Future<Void> future : futures) {
                 // any remaining errors
                 future.get();
             }
+        } finally {
+            for (Infrastructure infrastructure : sharedInfra) {
+                try {
+                    infrastructure.close();
+                } catch (Exception e) {
+                    LOG.error("Failed to close shared infrastructure", e);
+                }
+            }
+            compartment.close();
         }
         progressTask.cancel(true);
         Files.move(newIndex, outputDir.resolve("index.json"), StandardCopyOption.REPLACE_EXISTING);
@@ -412,6 +441,7 @@ public class SuiteRunner {
         private List<String> enabledRunTypes;
         private int repetitions;
         private int maxConcurrentRuns;
+        private InfrastructureMode infrastructureMode;
 
         public int getRepetitions() {
             return repetitions;
@@ -452,6 +482,27 @@ public class SuiteRunner {
         public void setMaxConcurrentRuns(int maxConcurrentRuns) {
             this.maxConcurrentRuns = maxConcurrentRuns;
         }
+
+        public InfrastructureMode getInfrastructureMode() {
+            return infrastructureMode;
+        }
+
+        public void setInfrastructureMode(InfrastructureMode infrastructureMode) {
+            this.infrastructureMode = infrastructureMode;
+        }
+    }
+
+    public enum InfrastructureMode {
+        /**
+         * Set up a new infrastructure for each run. Very parallelizable, somewhat wasteful (infra setup takes time),
+         * more prone to infra differences between runs.
+         */
+        INFRASTRUCTURE_PER_RUN,
+        /**
+         * Use one infrastructure per repetition and run every framework config on it. Only as parallel as
+         * {@link SuiteConfiguration#repetitions}, but less prone to bias between runs.
+         */
+        REUSE
     }
 
     public record BenchmarkParameters(

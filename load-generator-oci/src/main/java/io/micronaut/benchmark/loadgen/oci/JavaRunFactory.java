@@ -63,7 +63,7 @@ public class JavaRunFactory {
          */
         public RunBuilder shadowJar(Path shadowJar) {
             if (!Files.exists(shadowJar)) {
-                throw new IllegalArgumentException("File does not exist");
+                throw new IllegalArgumentException("File does not exist: " + shadowJar);
             }
             this.shadowJar = shadowJar;
             return this;
@@ -117,7 +117,7 @@ public class JavaRunFactory {
                         @Override
                         public void setupAndRun(ClientSession benchmarkServerClient, Path outputDirectory, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
                             progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
-                            SshUtil.run(benchmarkServerClient, "sudo yum install jdk-" + hotspotConfiguration.getVersion() + "-headless -y", log);
+                            SshUtil.run(benchmarkServerClient, "sudo yum install jdk-" + hotspotConfiguration.getVersion() + "-headless -y", log, 0, 1);
                             progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
@@ -136,10 +136,12 @@ public class JavaRunFactory {
                                 cmd.open().verify();
                                 waiter.awaitWithNextPattern(null);
 
-                                benchmarkClosure.benchmark(progress);
-
-                                SshUtil.interrupt(cmd);
-                                SshUtil.joinAndCheck(cmd, 130);
+                                try {
+                                    benchmarkClosure.benchmark(progress);
+                                } finally {
+                                    SshUtil.interrupt(cmd);
+                                    SshUtil.joinAndCheck(cmd, 130);
+                                }
                             }
                             if (asyncProfilerConfiguration.isEnabled()) {
                                 LOG.info("Downloading async-profiler results");
@@ -172,10 +174,10 @@ public class JavaRunFactory {
                         public void setupAndRun(ClientSession benchmarkServerClient, Path outputDirectory, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
 
                             progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
-                            SshUtil.run(benchmarkServerClient, "sudo yum install graalvm22-ee-17-jdk -y", log);
-                            SshUtil.run(benchmarkServerClient, "sudo yum update oraclelinux-release-el9 -y", log);
-                            SshUtil.run(benchmarkServerClient, "sudo yum config-manager --set-enabled ol9_codeready_builder", log);
-                            SshUtil.run(benchmarkServerClient, "sudo yum install graalvm22-ee-17-native-image -y", log);
+                            SshUtil.run(benchmarkServerClient, "sudo yum install graalvm22-ee-17-jdk -y", log, 0, 1);
+                            SshUtil.run(benchmarkServerClient, "sudo yum update oraclelinux-release-el9 -y", log, 0, 1);
+                            SshUtil.run(benchmarkServerClient, "sudo yum config-manager --set-enabled ol9_codeready_builder", log, 0, 1);
+                            SshUtil.run(benchmarkServerClient, "sudo yum install graalvm22-ee-17-native-image -y", log, 0, 1);
                             progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
@@ -189,10 +191,12 @@ public class JavaRunFactory {
                                 cmd.open().verify();
                                 waiter.awaitWithNextPattern(null);
 
-                                benchmarkClosure.pgoLoad(progress);
-
-                                SshUtil.interrupt(cmd);
-                                SshUtil.joinAndCheck(cmd, 130);
+                                try {
+                                    benchmarkClosure.pgoLoad(progress);
+                                } finally {
+                                    SshUtil.interrupt(cmd);
+                                    SshUtil.joinAndCheck(cmd, 130);
+                                }
                             }
                             progress.update(BenchmarkPhase.BUILDING_IMAGE);
                             SshUtil.run(benchmarkServerClient, niCommandBase + " --pgo -jar " + SHADOW_JAR_LOCATION + " optimized", log);
@@ -203,7 +207,12 @@ public class JavaRunFactory {
                                 cmd.open().verify();
                                 waiter.awaitWithNextPattern(null);
 
-                                benchmarkClosure.benchmark(progress);
+                                try {
+                                    benchmarkClosure.benchmark(progress);
+                                } finally {
+                                    SshUtil.interrupt(cmd);
+                                    SshUtil.joinAndCheck(cmd, 130);
+                                }
                             }
                         }
                     })

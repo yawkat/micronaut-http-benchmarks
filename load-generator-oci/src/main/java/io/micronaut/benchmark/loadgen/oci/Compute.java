@@ -29,13 +29,15 @@ public class Compute {
     private static final Logger LOG = LoggerFactory.getLogger(Compute.class);
 
     private final ComputeConfiguration computeConfiguration;
+    private final Map<String, ComputeConfiguration.InstanceType> instanceTypes;
     private final ComputeClient computeClient;
     private final SshFactory sshFactory;
 
     private final Map<String, List<Image>> imagesByCompartment = new ConcurrentHashMap<>();
 
-    public Compute(ComputeConfiguration computeConfiguration, ComputeClient computeClient, SshFactory sshFactory) {
+    public Compute(ComputeConfiguration computeConfiguration, Map<String, ComputeConfiguration.InstanceType> instanceTypes, ComputeClient computeClient, SshFactory sshFactory) {
         this.computeConfiguration = computeConfiguration;
+        this.instanceTypes = instanceTypes;
         this.computeClient = computeClient;
         this.sshFactory = sshFactory;
     }
@@ -47,7 +49,7 @@ public class Compute {
     }
 
     public Launch builder(String instanceType, OciLocation location, String subnetId) {
-        return new Launch(instanceType, computeConfiguration.instanceTypes.get(instanceType), location, subnetId);
+        return new Launch(instanceType, instanceTypes.get(instanceType), location, subnetId);
     }
 
     public class Launch {
@@ -93,7 +95,7 @@ public class Compute {
             Image image = images.stream()
                     .filter(i -> i.getId().equals(instanceType.image) || i.getDisplayName().equals(instanceType.image))
                     .findAny()
-                    .orElseThrow(() -> new NoSuchElementException("Image not found. Available images are: " + images.stream().map(Image::getDisplayName).toList()));
+                    .orElseThrow(() -> new NoSuchElementException("Image " + instanceType.image + " not found. Available images are: " + images.stream().map(Image::getDisplayName).toList()));
             while (true) {
                 try {
                     String id = computeClient.launchInstance(LaunchInstanceRequest.builder()
@@ -161,7 +163,7 @@ public class Compute {
 
         private com.oracle.bmc.core.model.Instance.LifecycleState getLifecycleState() {
             try {
-                return GenericBenchmarkRunner.retry(() -> computeClient.getInstance(
+                return Infrastructure.retry(() -> computeClient.getInstance(
                                 GetInstanceRequest.builder()
                                         .instanceId(id)
                                         .build())
@@ -236,17 +238,17 @@ public class Compute {
 
     @ConfigurationProperties("compute")
     public static class ComputeConfiguration {
-        private Map<String, InstanceType> instanceTypes;
+        private List<InstanceType> instanceTypes;
 
-        public Map<String, InstanceType> getInstanceTypes() {
+        public List<InstanceType> getInstanceTypes() {
             return instanceTypes;
         }
 
-        public void setInstanceTypes(Map<String, InstanceType> instanceTypes) {
+        public void setInstanceTypes(List<InstanceType> instanceTypes) {
             this.instanceTypes = instanceTypes;
         }
 
-        @EachProperty("instanceTypes")
+        @EachProperty("instance-types")
         public static class InstanceType {
             private String shape = "VM.Standard.E4.Flex";
             private float ocpus = 2.0f;

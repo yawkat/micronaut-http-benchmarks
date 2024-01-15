@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.InterruptedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -76,6 +77,10 @@ public class HyperfoilRunner implements AutoCloseable {
     private HyperfoilRunner(Factory factory, Path logDirectory, OciLocation location, String privateSubnetId) throws Exception {
         this.factory = factory;
         this.logDirectory = logDirectory;
+
+        try {
+            Files.createDirectories(logDirectory);
+        } catch (FileAlreadyExistsException ignored) {}
 
         // fail fast if we can't create the instances
         instances = createInstances(location, privateSubnetId);
@@ -207,7 +212,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 } finally {
                     LOG.info("Downloading agent logs…");
                     try {
-                        for (String agent : GenericBenchmarkRunner.retry(client::agents, controllerPortForward::disconnect)) {
+                        for (String agent : Infrastructure.retry(client::agents, controllerPortForward::disconnect)) {
                             client.downloadLog(agent, null, 0, logDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
                         }
                     } catch (Exception e) {
@@ -247,20 +252,20 @@ public class HyperfoilRunner implements AutoCloseable {
         BenchmarkPhase benchmarkPhase = forPgo ? BenchmarkPhase.PGO : BenchmarkPhase.BENCHMARKING;
 
         progress.update(benchmarkPhase);
-        String ip = GenericBenchmarkRunner.SERVER_IP;
+        String ip = Infrastructure.SERVER_IP;
         int port = protocol == Protocol.HTTP1 ? 8080 : 8443;
         io.hyperfoil.http.config.Protocol prot = protocol == Protocol.HTTP1 ? io.hyperfoil.http.config.Protocol.HTTP : io.hyperfoil.http.config.Protocol.HTTPS;
 
         String statusUri = prot.scheme + "://" + ip + ":" + port + "/status";
         String findUri = prot.scheme + "://" + ip + ":" + port + "/search/find";
         String curlBase = "curl " + (protocol == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --silent --insecure ";
-        GenericBenchmarkRunner.retry(() -> {
+        Infrastructure.retry(() -> {
             try (OutputListener.Write write = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("status.json")))) {
                 SshUtil.run(controllerSession, curlBase + statusUri, write);
             }
             return null;
-        });
-        GenericBenchmarkRunner.retry(() -> {
+        }, controllerPortForward::disconnect);
+        Infrastructure.retry(() -> {
             String testBody = factory.objectMapper.writeValueAsString(new Input(List.of("foo", "bar"), "ar"));
             ByteArrayOutputStream resp = new ByteArrayOutputStream();
             try (OutputListener.Write write = new OutputListener.Write(resp)) {
@@ -333,7 +338,7 @@ public class HyperfoilRunner implements AutoCloseable {
         long startTime = System.nanoTime();
         String lastPhase = null;
         while (true) {
-            RequestStatisticsResponse recentStats = GenericBenchmarkRunner.retry(runRef::statsRecent, controllerPortForward::disconnect);
+            RequestStatisticsResponse recentStats = Infrastructure.retry(runRef::statsRecent, controllerPortForward::disconnect);
             if (recentStats.status.equals("TERMINATED")) {
                 break;
             }
@@ -357,7 +362,7 @@ public class HyperfoilRunner implements AutoCloseable {
 
         record StatsAllWrapper(byte[] resultBytes, StatsAll statsAll) {}
 
-        StatsAllWrapper wrapper = GenericBenchmarkRunner.retry(() -> {
+        StatsAllWrapper wrapper = Infrastructure.retry(() -> {
             byte[] bytes = runRef.statsAll("json");
             return new StatsAllWrapper(bytes, factory.objectMapper.readValue(bytes, StatsAll.class));
         }, controllerPortForward::disconnect);

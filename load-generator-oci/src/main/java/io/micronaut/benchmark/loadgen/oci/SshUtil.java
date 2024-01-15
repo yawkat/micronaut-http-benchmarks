@@ -8,6 +8,7 @@ import org.apache.sshd.common.util.buffer.Buffer;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.stream.IntStream;
 
 public final class SshUtil {
     private SshUtil() {}
@@ -22,19 +23,19 @@ public final class SshUtil {
         joinAndCheck(cmd, 0);
     }
 
-    public static void joinAndCheck(ChannelExec cmd, int expectedStatus) throws IOException {
+    public static void joinAndCheck(ChannelExec cmd, int... expectedStatus) throws IOException {
         cmd.waitFor(ClientSession.REMOTE_COMMAND_WAIT_EVENTS, 0);
         if (cmd.getExitSignal() != null) {
             throw new IOException(cmd.getExitSignal());
         }
-        if (cmd.getExitStatus() == null || cmd.getExitStatus() != expectedStatus) {
+        if (cmd.getExitStatus() == null || IntStream.of(expectedStatus).noneMatch(i -> i == cmd.getExitStatus())) {
             throw new IOException("Exit status: " + cmd.getExitStatus());
         }
     }
 
     static void openFirewallPorts(ClientSession benchmarkServerClient, OutputListener... log) throws IOException {
         try (ChannelExec session = benchmarkServerClient.createExecChannel("sudo tee /etc/nftables/main.nft");
-             InputStream nft = GenericBenchmarkRunner.class.getResourceAsStream("/main.nft")) {
+             InputStream nft = Infrastructure.class.getResourceAsStream("/main.nft")) {
             session.setIn(nft);
             forwardOutput(session, log);
             session.open().await();
@@ -43,11 +44,24 @@ public final class SshUtil {
         run(benchmarkServerClient, "sudo systemctl restart nftables", log);
     }
 
+
+    public static void run(ClientSession client, String command, OutputListener log) throws IOException {
+        run(client, command, new OutputListener[]{log});
+    }
+
     public static void run(ClientSession client, String command, OutputListener... log) throws IOException {
         try (ChannelExec chan = client.createExecChannel(command)) {
             forwardOutput(chan, log);
             chan.open().await();
             joinAndCheck(chan);
+        }
+    }
+
+    public static void run(ClientSession client, String command, OutputListener log, int... allowedStatus) throws IOException {
+        try (ChannelExec chan = client.createExecChannel(command)) {
+            forwardOutput(chan, log);
+            chan.open().await();
+            joinAndCheck(chan, allowedStatus);
         }
     }
 
