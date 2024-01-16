@@ -13,6 +13,7 @@ import io.hyperfoil.controller.model.RequestStatisticsResponse;
 import io.hyperfoil.controller.model.RequestStats;
 import io.hyperfoil.core.util.ConstantBytesGenerator;
 import io.hyperfoil.http.api.HttpMethod;
+import io.hyperfoil.http.config.ConnectionStrategy;
 import io.hyperfoil.http.config.HttpPluginBuilder;
 import io.hyperfoil.http.statistics.HttpStats;
 import io.hyperfoil.http.steps.HttpStepCatalog;
@@ -57,7 +58,6 @@ public class HyperfoilRunner implements AutoCloseable {
     private static final String HYPERFOIL_AGENT_PREFIX = "10.0.1.";
     private static final Path LOCAL_HYPERFOIL_LOCATION = Path.of("/home/yawkat/bin/hyperfoil-0.24.1");
     private static final String REMOTE_HYPERFOIL_LOCATION = "hyperfoil";
-    private static final int SESSION_LIMIT_FACTOR = 10;
 
     private final Factory factory;
     private final CompletableFuture<SshFactory.Relay> relay = new CompletableFuture<>();
@@ -294,6 +294,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 .allowHttp1x(protocol != Protocol.HTTPS2)
                 .allowHttp2(protocol == Protocol.HTTPS2)
                 .sharedConnections(factory.config.sharedConnections)
+                .connectionStrategy(ConnectionStrategy.SESSION_POOLS)
                 .pipeliningLimit(factory.config.pipeliningLimit);
 
         List<String> phaseNames = new ArrayList<>();
@@ -301,7 +302,7 @@ public class HyperfoilRunner implements AutoCloseable {
             phaseNames.add("warmup");
             prepareScenario(body, ip, port, benchmark.addPhase("warmup")
                     .constantRate(factory.config.compileOps)
-                    .maxSessions(factory.config.compileOps * SESSION_LIMIT_FACTOR)
+                    .maxSessions(factory.config.compileOps * factory.config.sessionLimitFactor)
                     .duration(TimeUnit.MILLISECONDS.convert(factory.config.warmupDuration))
                     .isWarmup(true)
                     .scenario());
@@ -313,7 +314,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 prepareScenario(body, ip, port, benchmark.addPhase(phaseName)
                         .constantRate(0)
                         .usersPerSec(ops)
-                        .maxSessions(ops * SESSION_LIMIT_FACTOR)
+                        .maxSessions(ops * factory.config.sessionLimitFactor)
                         .duration(TimeUnit.MILLISECONDS.convert(factory.config.benchmarkDuration))
                         .isWarmup(false)
                         .startAfter(lastPhase)
@@ -324,7 +325,7 @@ public class HyperfoilRunner implements AutoCloseable {
             phaseNames.add("pgo");
             prepareScenario(body, ip, port, benchmark.addPhase("pgo")
                     .constantRate(factory.config.compileOps)
-                    .maxSessions(factory.config.compileOps * SESSION_LIMIT_FACTOR)
+                    .maxSessions(factory.config.compileOps * factory.config.sessionLimitFactor)
                     .duration(TimeUnit.MILLISECONDS.convert(factory.config.pgoDuration))
                     .isWarmup(false)
                     .scenario());
@@ -462,6 +463,7 @@ public class HyperfoilRunner implements AutoCloseable {
         private List<Integer> ops;
         private int sharedConnections;
         private int pipeliningLimit;
+        private int sessionLimitFactor;
 
         public int getCompileOps() {
             return compileOps;
@@ -525,6 +527,14 @@ public class HyperfoilRunner implements AutoCloseable {
 
         public void setPipeliningLimit(int pipeliningLimit) {
             this.pipeliningLimit = pipeliningLimit;
+        }
+
+        public int getSessionLimitFactor() {
+            return sessionLimitFactor;
+        }
+
+        public void setSessionLimitFactor(int sessionLimitFactor) {
+            this.sessionLimitFactor = sessionLimitFactor;
         }
     }
 

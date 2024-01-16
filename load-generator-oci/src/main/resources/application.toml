@@ -56,8 +56,9 @@ agent-count=8
 warmup-duration="1m"
 pgo-duration="2m"
 compile-ops=50
-shared-connections=50
-pipelining-limit=50
+shared-connections=24000
+session-limit-factor=2
+pipelining-limit=1
 
 # different ops/s to try
 ops=[
