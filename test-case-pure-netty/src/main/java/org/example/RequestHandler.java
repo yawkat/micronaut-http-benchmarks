@@ -34,6 +34,12 @@ public class RequestHandler extends SimpleChannelInboundHandler<FullHttpRequest>
     private final ObjectWriter writerStatus = new ObjectMapper().writerFor(Status.class);
 
     @Override
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        ctx.channel().config().setAutoRead(false);
+        ctx.read();
+    }
+
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         if (cause instanceof ReadTimeoutException) {
             // ignore
