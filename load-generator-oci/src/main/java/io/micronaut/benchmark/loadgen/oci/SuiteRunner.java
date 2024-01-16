@@ -143,11 +143,14 @@ public class SuiteRunner {
                                     if (suiteConfiguration.infrastructureMode == InfrastructureMode.REUSE) {
                                         assert repInfra != null;
                                         repInfra.run(out, run, loadVariant, phaseUpdater);
+                                        phaseUpdater.update(BenchmarkPhase.DONE);
                                     } else {
                                         semaphore.acquire();
                                         try (Infrastructure infra = infraFactory.create(location, out)) {
                                             infra.run(out, run, loadVariant, phaseUpdater);
+                                            phaseUpdater.update(BenchmarkPhase.SHUTTING_DOWN);
                                         }
+                                        phaseUpdater.update(BenchmarkPhase.DONE);
                                         semaphore.release();
                                     }
                                 } catch (Exception e) {
