@@ -66,11 +66,15 @@ public final class SshUtil {
     }
 
     public static void interrupt(ChannelExec cmd) throws IOException {
+        signal(cmd, "INT");
+    }
+
+    public static void signal(ChannelExec cmd, String signal) throws IOException {
         Buffer buffer = cmd.getSession().createBuffer(SshConstants.SSH_MSG_CHANNEL_REQUEST, 0);
         buffer.putInt(cmd.getRecipient());
         buffer.putString("signal");
         buffer.putBoolean(false);
-        buffer.putString("INT");
+        buffer.putString(signal);
         cmd.writePacket(buffer);
     }
 }

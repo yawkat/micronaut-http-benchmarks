@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 @Singleton
@@ -140,7 +141,8 @@ public class JavaRunFactory {
                                     benchmarkClosure.benchmark(progress);
                                 } finally {
                                     SshUtil.interrupt(cmd);
-                                    SshUtil.joinAndCheck(cmd, 130);
+                                    TimeUnit.SECONDS.sleep(1);
+                                    SshUtil.signal(cmd, "KILL");
                                 }
                             }
                             if (asyncProfilerConfiguration.enabled()) {
