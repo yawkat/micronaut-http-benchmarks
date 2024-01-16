@@ -435,61 +435,14 @@ public class SuiteRunner {
     }
 
     @ConfigurationProperties("suite")
-    public static final class SuiteConfiguration {
-        private String availabilityDomain;
-        private String compartment;
-        private List<String> enabledRunTypes;
-        private int repetitions;
-        private int maxConcurrentRuns;
-        private InfrastructureMode infrastructureMode;
-
-        public int getRepetitions() {
-            return repetitions;
-        }
-
-        public void setRepetitions(int repetitions) {
-            this.repetitions = repetitions;
-        }
-
-        public String getCompartment() {
-            return compartment;
-        }
-
-        public void setCompartment(String compartment) {
-            this.compartment = compartment;
-        }
-
-        public String getAvailabilityDomain() {
-            return availabilityDomain;
-        }
-
-        public void setAvailabilityDomain(String availabilityDomain) {
-            this.availabilityDomain = availabilityDomain;
-        }
-
-        public List<String> getEnabledRunTypes() {
-            return enabledRunTypes;
-        }
-
-        public void setEnabledRunTypes(List<String> enabledRunTypes) {
-            this.enabledRunTypes = enabledRunTypes;
-        }
-
-        public int getMaxConcurrentRuns() {
-            return maxConcurrentRuns;
-        }
-
-        public void setMaxConcurrentRuns(int maxConcurrentRuns) {
-            this.maxConcurrentRuns = maxConcurrentRuns;
-        }
-
-        public InfrastructureMode getInfrastructureMode() {
-            return infrastructureMode;
-        }
-
-        public void setInfrastructureMode(InfrastructureMode infrastructureMode) {
-            this.infrastructureMode = infrastructureMode;
-        }
+    public record SuiteConfiguration(
+            String availabilityDomain,
+            String compartment,
+            List<String> enabledRunTypes,
+            int repetitions,
+            int maxConcurrentRuns,
+            InfrastructureMode infrastructureMode
+    ) {
     }
 
     public enum InfrastructureMode {

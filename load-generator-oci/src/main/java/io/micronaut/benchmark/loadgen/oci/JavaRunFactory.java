@@ -55,7 +55,7 @@ public class JavaRunFactory {
 
         private RunBuilder(String typePrefix) {
             this.typePrefix = typePrefix;
-            this.additionalNativeImageOptions = nativeImageConfiguration.getPrefixOptions().getOrDefault(typePrefix, "");
+            this.additionalNativeImageOptions = nativeImageConfiguration.prefixOptions().getOrDefault(typePrefix, "");
         }
 
         /**
@@ -96,7 +96,7 @@ public class JavaRunFactory {
 
         public Stream<FrameworkRun> build() {
             return Stream.concat(
-                    hotspotConfiguration.getOptionChoices().stream().map(hotspotOptions -> new FrameworkRun() {
+                    hotspotConfiguration.optionChoices().stream().map(hotspotOptions -> new FrameworkRun() {
                         @Override
                         public String type() {
                             return typePrefix + "-hotspot";
@@ -104,7 +104,7 @@ public class JavaRunFactory {
 
                         @Override
                         public String name() {
-                            return typePrefix + "-hotspot-" + configString + "-" + optionsToString(hotspotOptions) + (asyncProfilerConfiguration.isEnabled() ? "-async-profiler" : "");
+                            return typePrefix + "-hotspot-" + configString + "-" + optionsToString(hotspotOptions) + (asyncProfilerConfiguration.enabled() ? "-async-profiler" : "");
                         }
 
                         @Override
@@ -117,17 +117,17 @@ public class JavaRunFactory {
                         @Override
                         public void setupAndRun(ClientSession benchmarkServerClient, Path outputDirectory, OutputListener.Write log, BenchmarkClosure benchmarkClosure, PhaseTracker.PhaseUpdater progress) throws Exception {
                             progress.update(BenchmarkPhase.INSTALLING_SOFTWARE);
-                            SshUtil.run(benchmarkServerClient, "sudo yum install jdk-" + hotspotConfiguration.getVersion() + "-headless -y", log, 0, 1);
+                            SshUtil.run(benchmarkServerClient, "sudo yum install jdk-" + hotspotConfiguration.version() + "-headless -y", log, 0, 1);
                             progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
                             String start = "java ";
-                            if (asyncProfilerConfiguration.isEnabled()) {
+                            if (asyncProfilerConfiguration.enabled()) {
                                 SshUtil.run(benchmarkServerClient, "sudo sysctl kernel.perf_event_paranoid=1", log);
                                 SshUtil.run(benchmarkServerClient, "sudo sysctl kernel.kptr_restrict=0", log);
                                 ScpClientCreator.instance().createScpClient(benchmarkServerClient)
-                                        .upload(asyncProfilerConfiguration.getPath(), PROFILER_LOCATION);
-                                start += "-agentpath:" + PROFILER_LOCATION + "=" + asyncProfilerConfiguration.getArgs() + " ";
+                                        .upload(asyncProfilerConfiguration.path(), PROFILER_LOCATION);
+                                start += "-agentpath:" + PROFILER_LOCATION + "=" + asyncProfilerConfiguration.args() + " ";
                             }
                             LOG.info("Starting benchmark server (hotspot, " + typePrefix + ")");
                             try (ChannelExec cmd = benchmarkServerClient.createExecChannel(start + hotspotOptions + " -jar " + SHADOW_JAR_LOCATION)) {
@@ -143,16 +143,16 @@ public class JavaRunFactory {
                                     SshUtil.joinAndCheck(cmd, 130);
                                 }
                             }
-                            if (asyncProfilerConfiguration.isEnabled()) {
+                            if (asyncProfilerConfiguration.enabled()) {
                                 LOG.info("Downloading async-profiler results");
-                                for (String output : asyncProfilerConfiguration.getOutputs()) {
+                                for (String output : asyncProfilerConfiguration.outputs()) {
                                     ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                             .download(output, outputDirectory.resolve(output));
                                 }
                             }
                         }
                     }),
-                    nativeImageConfiguration.getOptionChoices().stream().map(nativeImageOptions -> new FrameworkRun() {
+                    nativeImageConfiguration.optionChoices().stream().map(nativeImageOptions -> new FrameworkRun() {
                         @Override
                         public String type() {
                             return typePrefix + "-native";

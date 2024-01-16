@@ -240,64 +240,18 @@ public class Compute {
     }
 
     @ConfigurationProperties("compute")
-    public static class ComputeConfiguration {
-        private List<InstanceType> instanceTypes;
-        private List<String> debugAuthorizedKeys = List.of();
-
-        public List<InstanceType> getInstanceTypes() {
-            return instanceTypes;
-        }
-
-        public void setInstanceTypes(List<InstanceType> instanceTypes) {
-            this.instanceTypes = instanceTypes;
-        }
-
-        public List<String> getDebugAuthorizedKeys() {
-            return debugAuthorizedKeys;
-        }
-
-        public void setDebugAuthorizedKeys(List<String> debugAuthorizedKeys) {
-            this.debugAuthorizedKeys = debugAuthorizedKeys;
-        }
+    public record ComputeConfiguration(
+            List<InstanceType> instanceTypes,
+            List<String> debugAuthorizedKeys
+    ) {
 
         @EachProperty("instance-types")
-        public static class InstanceType {
-            private String shape = "VM.Standard.E4.Flex";
-            private float ocpus = 2.0f;
-            private float memoryInGb = 8.0f;
-            private String image = "Oracle-Linux-9.2-2023.12.08-0";
-
-            public String getShape() {
-                return shape;
-            }
-
-            public void setShape(String shape) {
-                this.shape = shape;
-            }
-
-            public float getOcpus() {
-                return ocpus;
-            }
-
-            public void setOcpus(float ocpus) {
-                this.ocpus = ocpus;
-            }
-
-            public float getMemoryInGb() {
-                return memoryInGb;
-            }
-
-            public void setMemoryInGb(float memoryInGb) {
-                this.memoryInGb = memoryInGb;
-            }
-
-            public String getImage() {
-                return image;
-            }
-
-            public void setImage(String image) {
-                this.image = image;
-            }
+        public record InstanceType(
+                String shape,
+                float ocpus,
+                float memoryInGb,
+                String image
+        ) {
         }
     }
 }

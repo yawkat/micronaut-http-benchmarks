@@ -453,89 +453,18 @@ public class HyperfoilRunner implements AutoCloseable {
     }
 
     @ConfigurationProperties("hyperfoil")
-    public static final class HyperfoilConfiguration {
-        private int agentCount;
-        private Duration warmupDuration;
-        private Duration benchmarkDuration;
-        private Duration pgoDuration;
+    public record HyperfoilConfiguration(
+            int agentCount,
+            Duration warmupDuration,
+            Duration benchmarkDuration,
+            Duration pgoDuration,
 
-        private int compileOps;
-        private List<Integer> ops;
-        private int sharedConnections;
-        private int pipeliningLimit;
-        private int sessionLimitFactor;
-
-        public int getCompileOps() {
-            return compileOps;
-        }
-
-        public void setCompileOps(int compileOps) {
-            this.compileOps = compileOps;
-        }
-
-        public int getAgentCount() {
-            return agentCount;
-        }
-
-        public void setAgentCount(int agentCount) {
-            this.agentCount = agentCount;
-        }
-
-        public Duration getWarmupDuration() {
-            return warmupDuration;
-        }
-
-        public void setWarmupDuration(Duration warmupDuration) {
-            this.warmupDuration = warmupDuration;
-        }
-
-        public Duration getBenchmarkDuration() {
-            return benchmarkDuration;
-        }
-
-        public void setBenchmarkDuration(Duration benchmarkDuration) {
-            this.benchmarkDuration = benchmarkDuration;
-        }
-
-        public Duration getPgoDuration() {
-            return pgoDuration;
-        }
-
-        public void setPgoDuration(Duration pgoDuration) {
-            this.pgoDuration = pgoDuration;
-        }
-
-        public List<Integer> getOps() {
-            return ops;
-        }
-
-        public void setOps(List<Integer> ops) {
-            this.ops = ops;
-        }
-
-        public int getSharedConnections() {
-            return sharedConnections;
-        }
-
-        public void setSharedConnections(int sharedConnections) {
-            this.sharedConnections = sharedConnections;
-        }
-
-        public int getPipeliningLimit() {
-            return pipeliningLimit;
-        }
-
-        public void setPipeliningLimit(int pipeliningLimit) {
-            this.pipeliningLimit = pipeliningLimit;
-        }
-
-        public int getSessionLimitFactor() {
-            return sessionLimitFactor;
-        }
-
-        public void setSessionLimitFactor(int sessionLimitFactor) {
-            this.sessionLimitFactor = sessionLimitFactor;
-        }
+            int compileOps,
+            List<Integer> ops,
+            int sharedConnections,
+            int pipeliningLimit,
+            int sessionLimitFactor
+    ) {
     }
 
     private record HyperfoilInstances(

@@ -49,13 +49,13 @@ public class SshFactory {
     SshFactory(SshConfiguration config, @Named(TaskExecutors.SCHEDULED) ExecutorService scheduler) throws Exception {
         this.scheduler = (ScheduledExecutorService) scheduler;
         KeyPair keyPair;
-        if (config.getPrivateKeyLocation() == null) {
+        if (config.privateKeyLocation() == null) {
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
             keyGen.initialize(2048);
             keyPair = keyGen.generateKeyPair();
         } else {
             LOG.warn("Using static private key from {}. This private key will be uploaded to the hyperfoil controller, so make sure this key is not valuable!", config.privateKeyLocation);
-            keyPair = RSAPEMResourceKeyPairParser.INSTANCE.loadKeyPairs(null, null, null, Files.readAllLines(config.getPrivateKeyLocation())).iterator().next();
+            keyPair = RSAPEMResourceKeyPairParser.INSTANCE.loadKeyPairs(null, null, null, Files.readAllLines(config.privateKeyLocation())).iterator().next();
         }
         ByteArrayOutputStream publicStream = new ByteArrayOutputStream();
         OpenSSHKeyPairResourceWriter.INSTANCE.writePublicKey(keyPair.getPublic(), "micronaut-benchmark", publicStream);
@@ -138,16 +138,7 @@ public class SshFactory {
     }
 
     @ConfigurationProperties("ssh")
-    public static class SshConfiguration {
-        private Path privateKeyLocation;
-
-        public Path getPrivateKeyLocation() {
-            return privateKeyLocation;
-        }
-
-        public void setPrivateKeyLocation(Path privateKeyLocation) {
-            this.privateKeyLocation = privateKeyLocation;
-        }
+    public record SshConfiguration(@Nullable Path privateKeyLocation) {
     }
 
     public record Relay(

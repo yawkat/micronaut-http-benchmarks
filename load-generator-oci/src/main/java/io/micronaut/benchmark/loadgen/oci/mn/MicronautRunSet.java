@@ -23,7 +23,7 @@ public class MicronautRunSet implements FrameworkRunSet {
 
     @Override
     public List<? extends FrameworkRun> getRuns() {
-        return MicronautRunSet.cartesianProduct(variantConfiguration.getCompileVariants())
+        return MicronautRunSet.cartesianProduct(variantConfiguration.compileVariants())
                 .stream()
                 .flatMap(compileConfiguration -> javaRunFactory.createJavaRuns("mn")
                         .shadowJar(Path.of("build/libs", variantName(compileConfiguration) + "-all.jar"))

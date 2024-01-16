@@ -6,15 +6,5 @@ import java.util.List;
 import java.util.Map;
 
 @ConfigurationProperties("variants.micronaut")
-public class MicronautVariantConfiguration {
-    private List<Boolean> native_;
-    private Map<String, List<String>> compileVariants;
-
-    public Map<String, List<String>> getCompileVariants() {
-        return compileVariants;
-    }
-
-    public void setCompileVariants(Map<String, List<String>> compileVariants) {
-        this.compileVariants = compileVariants;
-    }
+public record MicronautVariantConfiguration(Map<String, List<String>> compileVariants) {
 }

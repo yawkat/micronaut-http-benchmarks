@@ -68,46 +68,9 @@ public class LoadManager {
     }
 
     @ConfigurationProperties("load")
-    static class LoadConfiguration {
-        private List<Protocol> protocols;
-        private List<DocumentConfiguration> documents;
-
-        public List<Protocol> getProtocols() {
-            return protocols;
-        }
-
-        public void setProtocols(List<Protocol> protocols) {
-            this.protocols = protocols;
-        }
-
-        public List<DocumentConfiguration> getDocuments() {
-            return documents;
-        }
-
-        public void setDocuments(List<DocumentConfiguration> documents) {
-            this.documents = documents;
-        }
-
+    record LoadConfiguration(List<Protocol> protocols, List<DocumentConfiguration> documents) {
         @EachProperty(value = "documents", list = true)
-        static class DocumentConfiguration {
-            private int stringCount;
-            private int stringLength;
-
-            public int getStringCount() {
-                return stringCount;
-            }
-
-            public void setStringCount(int stringCount) {
-                this.stringCount = stringCount;
-            }
-
-            public int getStringLength() {
-                return stringLength;
-            }
-
-            public void setStringLength(int stringLength) {
-                this.stringLength = stringLength;
-            }
+        record DocumentConfiguration(int stringCount, int stringLength) {
         }
     }
 }
