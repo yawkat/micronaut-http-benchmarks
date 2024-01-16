@@ -393,6 +393,8 @@ public class HyperfoilRunner implements AutoCloseable {
             LOG.info("Benchmark complete, writing output");
             Path outputPath = outputDirectory.resolve(benchmarkFailures.isEmpty() ? "output.json" : "output-failed.json");
             Files.write(outputPath, wrapper.resultBytes);
+            Path metaPath = outputDirectory.resolve(benchmarkFailures.isEmpty() ? "meta.json" : "meta-failed.json");
+            Files.write(metaPath, factory.objectMapper.writeValueAsBytes(new Metadata(factory.config)));
             if (!benchmarkFailures.isEmpty()) {
                 String msg = String.join("\n", benchmarkFailures) + "\nOutput written at: " + outputPath;
                 throw invalidatesBenchmark ? new InvalidatesBenchmarkException(msg) : new Exception(msg);
@@ -511,4 +513,6 @@ public class HyperfoilRunner implements AutoCloseable {
     private record Input(List<String> haystack, String needle) {}
 
     private record Result(int listIndex, int stringIndex) {}
+
+    private record Metadata(HyperfoilConfiguration hyperfoilConfiguration) {}
 }

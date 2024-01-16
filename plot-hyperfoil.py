@@ -153,8 +153,6 @@ def ns_to_str(ns: int) -> str:
     return f'{ns / factor:g}{unit}'
 
 
-# matches application.toml hyperfoil.ops
-OPS = [5, 10, 15, 25, 50, 75, 100, 200, 400, 800, 1000, 2000, 4000, 8000, 16000]
 MODE_HISTOGRAM = "histogram"
 MODE_SIMPLE = "simple"
 SIMPLE_OPS = 1000
@@ -172,13 +170,6 @@ def main():
     combine_runs = True
     mode = MODE_HISTOGRAM
 
-    if mode == MODE_HISTOGRAM:
-        rows = 4
-        cols = int(np.ceil(len(OPS) / rows))
-        fig, axs = plt.subplots(rows, cols)
-    elif mode == MODE_SIMPLE:
-        ax = plt.subplot()
-
     def get_discriminator_tuple(index_item: dict):
         return tuple(get_index_property(index_item, k) for k in discriminator_properties)
 
@@ -195,10 +186,14 @@ def main():
     max_time = 0
     min_time = None
     discriminated = []
+    meta = None
     for run in index:
         if matches(filter_properties, run):
             continue
         run_data = load_run(run["name"])
+        if meta is None:
+            with open(f"output/{run['name']}/meta.json") as f:
+                meta = json.load(f)
         for phase in run_data["stats"]:
             for percentile in phase["histogram"]["percentiles"]:
                 if percentile["percentile"] != 1.0:
@@ -216,7 +211,14 @@ def main():
         print(min_time, max_time)
     colors_by_discriminator = {d: f'C{i}' for i, d in enumerate(discriminated)}
 
-    for phase_i, ops in enumerate(OPS):
+    if mode == MODE_HISTOGRAM:
+        rows = 4
+        cols = int(np.ceil(len(meta["hyperfoilConfiguration"]["ops"]) / rows))
+        fig, axs = plt.subplots(rows, cols)
+    elif mode == MODE_SIMPLE:
+        ax = plt.subplot()
+
+    for phase_i, ops in enumerate(meta["hyperfoilConfiguration"]["ops"]):
         phase = f"main/{phase_i}"
         if mode == MODE_HISTOGRAM:
             ax: matplotlib.axes.Axes = axs[phase_i // len(axs[0])][phase_i % len(axs[0])]
@@ -305,7 +307,7 @@ def main():
     if mode == MODE_HISTOGRAM:
         for r in range(rows):
             for c in range(cols):
-                if c + r * rows >= len(OPS):
+                if c + r * rows >= len(meta["hyperfoilConfiguration"]["ops"]):
                     axs[r][c].remove()
         plt.xlabel("Percentile")
     elif mode == MODE_SIMPLE:
