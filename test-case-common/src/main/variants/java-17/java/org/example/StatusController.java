@@ -15,11 +15,13 @@
  */
 package org.example;
 
+import io.micronaut.http.HttpRequest;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Get;
-import io.micronaut.http.netty.channel.EventLoopGroupFactory;
+import io.micronaut.http.server.netty.NettyHttpRequest;
 import io.micronaut.json.JsonMapper;
 import io.micronaut.serde.annotation.Serdeable;
+import io.netty.channel.Channel;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslProvider;
 import jakarta.inject.Inject;
@@ -29,13 +31,18 @@ public class StatusController {
     @Inject
     JsonMapper jsonMapper;
 
-    @Inject
-    EventLoopGroupFactory eventLoopGroupFactory;
-
     @Get
-    public Status getStatus() {
+    public Status getStatus(HttpRequest<?> request) {
+        Channel ch = ((NettyHttpRequest<?>) request).getChannelHandlerContext().channel();
+        while (true) {
+            Channel parent = ch.parent();
+            if (parent == null) {
+                break;
+            }
+            ch = parent;
+        }
         return new Status(
-                eventLoopGroupFactory.serverSocketChannelClass().getName(),
+                ch.getClass().getName(),
                 SslContext.defaultServerProvider(),
                 jsonMapper.getClass().getName()
         );
