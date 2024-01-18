@@ -1,6 +1,7 @@
 micronaut:
   server:
     http-version: 2.0
+    date-header: false
     ssl:
       enabled: true
       key-store:
