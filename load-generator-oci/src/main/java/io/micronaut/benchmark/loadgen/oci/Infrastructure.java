@@ -203,18 +203,18 @@ public class Infrastructure implements AutoCloseable {
         if (hyperfoilRunner != null) {
             hyperfoilRunner.terminateAsync();
         }
-        if (relayServer != null) {
-            relayServer.instance.terminateAsync();
-        }
         if (benchmarkServer != null) {
             benchmarkServer.terminateAsync();
         }
 
-        if (relayServer != null) {
-            relayServer.close();
-        }
         if (hyperfoilRunner != null) {
             hyperfoilRunner.close();
+        }
+        if (relayServer != null) {
+            relayServer.instance.terminateAsync();
+        }
+        if (relayServer != null) {
+            relayServer.close();
         }
         if (benchmarkServer != null) {
             benchmarkServer.close();
