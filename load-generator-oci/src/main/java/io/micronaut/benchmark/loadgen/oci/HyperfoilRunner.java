@@ -69,7 +69,7 @@ public class HyperfoilRunner implements AutoCloseable {
     private final Future<?> worker;
     private final List<Compute.Instance> computeInstances = new CopyOnWriteArrayList<>();
     private ClientSession controllerSession;
-    private ResilientSshPortForwarder controllerPortForward;
+    private final CompletableFuture<ResilientSshPortForwarder> controllerPortForward = new CompletableFuture<>();
 
     static {
         System.setProperty("io.hyperfoil.cli.request.timeout", "30000");
@@ -180,7 +180,7 @@ public class HyperfoilRunner implements AutoCloseable {
                          controllerPortForward.address().getHostName(),
                          controllerPortForward.address().getPort(),
                          false, true, null)) {
-                this.controllerPortForward = controllerPortForward;
+                this.controllerPortForward.complete(controllerPortForward);
 
                 SshUtil.forwardOutput(controllerCommand, log);
                 controllerCommand.open().verify();
@@ -214,7 +214,7 @@ public class HyperfoilRunner implements AutoCloseable {
                     LOG.info("Downloading agent logs…");
                     try {
                         for (String agent : Infrastructure.retry(client::agents, controllerPortForward::disconnect)) {
-                            client.downloadLog(agent, null, 0, logDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile());
+                            Infrastructure.retry(() -> client.downloadLog(agent, null, 0, logDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile()), controllerPortForward::disconnect);
                         }
                     } catch (Exception e) {
                         LOG.error("Failed to download agent logs", e);
@@ -265,7 +265,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 SshUtil.run(controllerSession, curlBase + statusUri, write);
             }
             return null;
-        }, controllerPortForward::disconnect);
+        }, controllerPortForward.get()::disconnect);
         Infrastructure.retry(() -> {
             String testBody = factory.objectMapper.writeValueAsString(new Input(List.of("foo", "bar"), "ar"));
             ByteArrayOutputStream resp = new ByteArrayOutputStream();
@@ -343,7 +343,7 @@ public class HyperfoilRunner implements AutoCloseable {
         long startTime = System.nanoTime();
         String lastPhase = null;
         while (true) {
-            RequestStatisticsResponse recentStats = Infrastructure.retry(runRef::statsRecent, controllerPortForward::disconnect);
+            RequestStatisticsResponse recentStats = Infrastructure.retry(runRef::statsRecent, controllerPortForward.get()::disconnect);
             if (recentStats.status.equals("TERMINATED")) {
                 break;
             }
@@ -370,7 +370,7 @@ public class HyperfoilRunner implements AutoCloseable {
         StatsAllWrapper wrapper = Infrastructure.retry(() -> {
             byte[] bytes = runRef.statsAll("json");
             return new StatsAllWrapper(bytes, factory.objectMapper.readValue(bytes, StatsAll.class));
-        }, controllerPortForward::disconnect);
+        }, controllerPortForward.get()::disconnect);
         List<String> benchmarkFailures = new ArrayList<>();
         boolean invalidatesBenchmark = false;
         for (StatsAll.Info.Error error : wrapper.statsAll.info.errors) {
