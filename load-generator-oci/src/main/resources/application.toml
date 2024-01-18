@@ -9,7 +9,8 @@ foo="bar"
 [suite]
 # the compartment to run the benchmark suite in. the compartment should be empty; it will be cleared before and after each run.
 compartment="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
-availability-domain="hkYI:EU-FRANKFURT-1-AD-1"
+region="ap-tokyo-1"
+availability-domain="hkYI:AP-TOKYO-1-AD-1"
 enabled-run-types=[
     "mn-hotspot",
     #"mn-native",

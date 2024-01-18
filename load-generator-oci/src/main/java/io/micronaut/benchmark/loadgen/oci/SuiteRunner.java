@@ -439,6 +439,7 @@ public class SuiteRunner {
 
     @ConfigurationProperties("suite")
     public record SuiteConfiguration(
+            String region,
             String availabilityDomain,
             String compartment,
             List<String> enabledRunTypes,
