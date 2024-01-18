@@ -54,6 +54,10 @@ public class Compute {
         return new Launch(instanceType, instanceTypes.get(instanceType), location, subnetId);
     }
 
+    public int getCoreCount(String instanceType) {
+        return (int) instanceTypes.get(instanceType).ocpus;
+    }
+
     public class Launch {
         private final String displayName;
         private final ComputeConfiguration.InstanceType instanceType;

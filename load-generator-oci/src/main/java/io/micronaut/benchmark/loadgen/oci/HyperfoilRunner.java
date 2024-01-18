@@ -58,6 +58,7 @@ public class HyperfoilRunner implements AutoCloseable {
     private static final String HYPERFOIL_AGENT_PREFIX = "10.0.1.";
     private static final Path LOCAL_HYPERFOIL_LOCATION = Path.of("/home/yawkat/bin/hyperfoil-0.24.1");
     private static final String REMOTE_HYPERFOIL_LOCATION = "hyperfoil";
+    private static final String AGENT_INSTANCE_TYPE = "hyperfoil-agent";
 
     private final Factory factory;
     private final CompletableFuture<SshFactory.Relay> relay = new CompletableFuture<>();
@@ -104,7 +105,7 @@ public class HyperfoilRunner implements AutoCloseable {
             computeInstances.add(hyperfoilController);
             List<Compute.Instance> agents = new ArrayList<>();
             for (int i = 0; i < factory.config.agentCount; i++) {
-                Compute.Instance instance = factory.compute.builder("hyperfoil-agent", location, privateSubnetId)
+                Compute.Instance instance = factory.compute.builder(AGENT_INSTANCE_TYPE, location, privateSubnetId)
                         .privateIp(agentIp(i))
                         .launch();
                 agents.add(instance);
@@ -283,7 +284,10 @@ public class HyperfoilRunner implements AutoCloseable {
                 .name(name)
                 .failurePolicy(Benchmark.FailurePolicy.CANCEL);
         for (int i = 0; i < factory.config.agentCount; i++) {
-            benchmark.addAgent("agent" + i, agentIp(i) + ":22", Map.of());
+            benchmark.addAgent("agent" + i, agentIp(i) + ":22", Map.of(
+                    "threads", String.valueOf(factory.compute.getCoreCount(AGENT_INSTANCE_TYPE)),
+                    "extras", "-XX:+UseG1GC -XX:MaxGCPauseMillis=50"
+            ));
         }
 
         benchmark.addPlugin(HttpPluginBuilder::new)
@@ -294,7 +298,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 .allowHttp1x(protocol != Protocol.HTTPS2)
                 .allowHttp2(protocol == Protocol.HTTPS2)
                 .sharedConnections(factory.config.sharedConnections)
-                .connectionStrategy(ConnectionStrategy.SESSION_POOLS)
+                .connectionStrategy(ConnectionStrategy.SHARED_POOL)
                 .pipeliningLimit(factory.config.pipeliningLimit);
 
         List<String> phaseNames = new ArrayList<>();
