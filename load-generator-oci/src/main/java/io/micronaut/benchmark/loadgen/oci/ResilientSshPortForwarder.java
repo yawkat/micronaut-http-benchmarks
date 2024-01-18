@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -115,16 +116,22 @@ public final class ResilientSshPortForwarder implements Closeable {
     }
 
     public void disconnect() {
-        loop.execute(() -> {
-            if (current != null) {
-                try {
-                    current.close();
-                } catch (IOException e) {
-                    LOG.warn("Failed to close connection", e);
+        try {
+            loop.submit(() -> {
+                if (current != null) {
+                    try {
+                        current.close();
+                    } catch (IOException e) {
+                        LOG.warn("Failed to close connection", e);
+                    }
+                    current = null;
                 }
-                current = null;
-            }
-        });
+            }).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
