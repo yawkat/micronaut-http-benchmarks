@@ -382,6 +382,7 @@ public class HyperfoilRunner implements AutoCloseable {
             benchmarkFailures.add(error.agent + ": " + error.msg);
         }
         for (StatsAll.SlaFailure failure : wrapper.statsAll.failures) {
+            LOG.info("SLA failure: {}", failure);
             if (failure.phase.equals("pgo") || failure.phase.equals("warmup")) {
                 benchmarkFailures.add("SLA failure in " + failure.phase + " phase: " + failure.message);
                 invalidatesBenchmark = true;
