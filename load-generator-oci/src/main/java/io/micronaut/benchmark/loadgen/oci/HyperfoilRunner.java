@@ -72,7 +72,8 @@ public class HyperfoilRunner implements AutoCloseable {
     private final CompletableFuture<ResilientSshPortForwarder> controllerPortForward = new CompletableFuture<>();
 
     static {
-        System.setProperty("io.hyperfoil.cli.request.timeout", "30000");
+        // 30s is too short for agent log download
+        System.setProperty("io.hyperfoil.cli.request.timeout", "60000");
     }
 
     private HyperfoilRunner(Factory factory, Path logDirectory, OciLocation location, String privateSubnetId) throws Exception {
