@@ -306,7 +306,7 @@ public class HyperfoilRunner implements AutoCloseable {
             phaseNames.add("warmup");
             prepareScenario(body, ip, port, benchmark.addPhase("warmup")
                     .constantRate(factory.config.compileOps)
-                    .maxSessions(factory.config.compileOps * factory.config.sessionLimitFactor)
+                    .maxSessions((int) (factory.config.compileOps * factory.config.sessionLimitFactor))
                     .duration(TimeUnit.MILLISECONDS.convert(factory.config.warmupDuration))
                     .isWarmup(true)
                     .scenario());
@@ -318,7 +318,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 prepareScenario(body, ip, port, benchmark.addPhase(phaseName)
                         .constantRate(0)
                         .usersPerSec(ops)
-                        .maxSessions(ops * factory.config.sessionLimitFactor)
+                        .maxSessions(Math.min((int) (ops * factory.config.sessionLimitFactor), factory.config.sharedConnections))
                         .duration(TimeUnit.MILLISECONDS.convert(factory.config.benchmarkDuration))
                         .isWarmup(false)
                         .startAfter(lastPhase)
@@ -329,7 +329,7 @@ public class HyperfoilRunner implements AutoCloseable {
             phaseNames.add("pgo");
             prepareScenario(body, ip, port, benchmark.addPhase("pgo")
                     .constantRate(factory.config.compileOps)
-                    .maxSessions(factory.config.compileOps * factory.config.sessionLimitFactor)
+                    .maxSessions((int) (factory.config.compileOps * factory.config.sessionLimitFactor))
                     .duration(TimeUnit.MILLISECONDS.convert(factory.config.pgoDuration))
                     .isWarmup(false)
                     .scenario());
@@ -469,7 +469,7 @@ public class HyperfoilRunner implements AutoCloseable {
             List<Integer> ops,
             int sharedConnections,
             int pipeliningLimit,
-            int sessionLimitFactor
+            double sessionLimitFactor
     ) {
     }
 
