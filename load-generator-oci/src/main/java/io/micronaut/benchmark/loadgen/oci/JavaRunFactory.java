@@ -108,9 +108,13 @@ public class JavaRunFactory {
                             return typePrefix + "-hotspot-" + configString + "-" + optionsToString(hotspotOptions) + (asyncProfilerConfiguration.enabled() ? "-async-profiler" : "");
                         }
 
+                        private String combinedOptions() {
+                            return hotspotConfiguration.commonOptions() + " " + hotspotOptions;
+                        }
+
                         @Override
                         public Object parameters() {
-                            return new HotspotParameters(compileConfiguration, hotspotOptions);
+                            return new HotspotParameters(compileConfiguration, combinedOptions());
                         }
 
                         record HotspotParameters(@JsonUnwrapped Object compileConfiguration, String hotspotOptions) {}
@@ -131,7 +135,7 @@ public class JavaRunFactory {
                                 start += "-agentpath:" + PROFILER_LOCATION + "=" + asyncProfilerConfiguration.args() + " ";
                             }
                             LOG.info("Starting benchmark server (hotspot, " + typePrefix + ")");
-                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel(start + hotspotOptions + " -jar " + SHADOW_JAR_LOCATION)) {
+                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel(start + combinedOptions() + " -jar " + SHADOW_JAR_LOCATION)) {
                                 OutputListener.Waiter waiter = new OutputListener.Waiter(ByteBuffer.wrap(boundLine));
                                 SshUtil.forwardOutput(cmd, log, waiter);
                                 cmd.open().verify();

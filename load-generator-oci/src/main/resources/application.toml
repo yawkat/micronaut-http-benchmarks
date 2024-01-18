@@ -108,7 +108,8 @@ image="Oracle-Linux-9.2-2023.12.08-0"
 
 [variants.hotspot]
 version=21
-option-choices=["-XX:+UseG1GC -Xmx1G --enable-preview"]
+common-options="-XX:+UseZGC -Xmx12G -Dio.netty.iouring.iosqeAsyncThreshold=2147483647"
+option-choices=[""]
 
 [variants.hotspot.async-profiler]
 enabled=false
