@@ -32,21 +32,21 @@ public class Compute {
 
     private final ComputeConfiguration computeConfiguration;
     private final Map<String, ComputeConfiguration.InstanceType> instanceTypes;
-    private final ComputeClient computeClient;
+    private final RegionalClient<ComputeClient> computeClient;
     private final SshFactory sshFactory;
 
-    private final Map<String, List<Image>> imagesByCompartment = new ConcurrentHashMap<>();
+    private final Map<OciLocation, List<Image>> imagesByCompartment = new ConcurrentHashMap<>();
 
-    public Compute(ComputeConfiguration computeConfiguration, Map<String, ComputeConfiguration.InstanceType> instanceTypes, ComputeClient computeClient, SshFactory sshFactory) {
+    public Compute(ComputeConfiguration computeConfiguration, Map<String, ComputeConfiguration.InstanceType> instanceTypes, RegionalClient<ComputeClient> computeClient, SshFactory sshFactory) {
         this.computeConfiguration = computeConfiguration;
         this.instanceTypes = instanceTypes;
         this.computeClient = computeClient;
         this.sshFactory = sshFactory;
     }
 
-    private List<Image> images(String compartment) {
-        return imagesByCompartment.computeIfAbsent(compartment, k -> computeClient.listImages(ListImagesRequest.builder()
-                .compartmentId(k)
+    private List<Image> images(OciLocation location) {
+        return imagesByCompartment.computeIfAbsent(location, k -> computeClient.forRegion(k).listImages(ListImagesRequest.builder()
+                .compartmentId(k.compartmentId())
                 .build()).getItems());
     }
 
@@ -97,14 +97,14 @@ public class Compute {
                 vnicDetails.privateIp(privateIp);
             }
             Throttle.COMPUTE.takeUninterruptibly();
-            List<Image> images = images(location.compartmentId());
+            List<Image> images = images(location);
             Image image = images.stream()
                     .filter(i -> i.getId().equals(instanceType.image) || i.getDisplayName().equals(instanceType.image))
                     .findAny()
                     .orElseThrow(() -> new NoSuchElementException("Image " + instanceType.image + " not found. Available images are: " + images.stream().map(Image::getDisplayName).toList()));
             while (true) {
                 try {
-                    String id = computeClient.launchInstance(LaunchInstanceRequest.builder()
+                    String id = computeClient.forRegion(location).launchInstance(LaunchInstanceRequest.builder()
                             .launchInstanceDetails(LaunchInstanceDetails.builder()
                                     .compartmentId(location.compartmentId())
                                     .availabilityDomain(location.availabilityDomain())
@@ -126,7 +126,7 @@ public class Compute {
                                             .build())
                                     .build())
                             .build()).getInstance().getId();
-                    return new Instance(id);
+                    return new Instance(location, id);
                 } catch (BmcException bmce) {
                     if (bmce.getStatusCode() == 429) {
                         LOG.info("429 while launching instance! Waiting 30s.");
@@ -140,11 +140,13 @@ public class Compute {
     }
 
     public class Instance implements AutoCloseable {
+        private final OciLocation location;
         final String id;
 
         private boolean terminating = false;
 
-        Instance(String id) {
+        Instance(OciLocation location, String id) {
+            this.location = location;
             this.id = id;
         }
 
@@ -170,7 +172,7 @@ public class Compute {
 
         private com.oracle.bmc.core.model.Instance.LifecycleState getLifecycleState() {
             try {
-                return Infrastructure.retry(() -> computeClient.getInstance(
+                return Infrastructure.retry(() -> computeClient.forRegion(location).getInstance(
                                 GetInstanceRequest.builder()
                                         .instanceId(id)
                                         .build())
@@ -195,7 +197,7 @@ public class Compute {
             while (true) {
                 Throttle.COMPUTE.takeUninterruptibly();
                 try {
-                    computeClient.terminateInstance(TerminateInstanceRequest.builder()
+                    computeClient.forRegion(location).terminateInstance(TerminateInstanceRequest.builder()
                             .instanceId(id)
                             .preserveBootVolume(false)
                             .build());

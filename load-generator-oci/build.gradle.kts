@@ -18,6 +18,7 @@ dependencies {
     implementation("io.micronaut.oraclecloud:micronaut-oraclecloud-sdk")
     implementation("io.micronaut.oraclecloud:micronaut-oraclecloud-bmc-identity")
     implementation("io.micronaut.oraclecloud:micronaut-oraclecloud-bmc-core")
+    implementation("io.micronaut.oraclecloud:micronaut-oraclecloud-httpclient-netty")
     implementation("io.micronaut.toml:micronaut-toml")
     implementation("io.micronaut:micronaut-jackson-databind")
     implementation("io.micronaut:micronaut-http-client")

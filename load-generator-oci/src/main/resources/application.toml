@@ -7,10 +7,6 @@ foo="bar"
 #private-key-location="/home/yawkat/.ssh/id_rsa"
 
 [suite]
-# the compartment to run the benchmark suite in. the compartment should be empty; it will be cleared before and after each run.
-compartment="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
-region="ap-tokyo-1"
-availability-domain="hkYI:AP-TOKYO-1-AD-1"
 enabled-run-types=[
     "mn-hotspot",
     #"mn-native",
@@ -23,7 +19,26 @@ enabled-run-types=[
 ]
 # independent repetitions of each benchmark
 repetitions=8
-max-concurrent-runs=25
+max-concurrent-runs=25 # only respected for infrastructure-per-run
+infrastructure-mode="reuse"
+
+# the compartments to run the benchmark suite in. the compartment should be empty; it will be cleared before and after each run.
+[[suite.location]]
+compartment-id="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
+region="ap-tokyo-1"
+availability-domain="hkYI:AP-TOKYO-1-AD-1"
+[[suite.location]]
+compartment-id="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
+region="ap-osaka-1"
+availability-domain="hkYI:AP-OSAKA-1-AD-1"
+[[suite.location]]
+compartment-id="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
+region="ap-sydney-1"
+availability-domain="hkYI:AP-SYDNEY-1-AD-1"
+[[suite.location]]
+compartment-id="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi2gltvb5zazhv2oe7wea"
+region="ap-melbourne-1"
+availability-domain="hkYI:AP-MELBOURNE-1-AD-1"
 
 # configuration for the benchmark load. applies to all frameworks.
 [load]

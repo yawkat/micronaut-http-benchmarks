@@ -30,12 +30,8 @@ import com.oracle.bmc.core.responses.ListSubnetsResponse;
 import com.oracle.bmc.core.responses.ListVcnsResponse;
 import com.oracle.bmc.identity.IdentityClient;
 import com.oracle.bmc.identity.model.Compartment;
-import com.oracle.bmc.identity.model.CreateCompartmentDetails;
-import com.oracle.bmc.identity.requests.CreateCompartmentRequest;
 import com.oracle.bmc.identity.requests.DeleteCompartmentRequest;
-import com.oracle.bmc.identity.requests.GetCompartmentRequest;
 import com.oracle.bmc.identity.requests.ListCompartmentsRequest;
-import com.oracle.bmc.identity.responses.CreateCompartmentResponse;
 import com.oracle.bmc.model.BmcException;
 import com.oracle.bmc.requests.BmcRequest;
 import io.micronaut.context.annotation.ConfigurationProperties;
@@ -66,9 +62,10 @@ import java.util.function.Function;
 public class SuiteRunner {
     private static final Logger LOG = LoggerFactory.getLogger(SuiteRunner.class);
 
-    private final IdentityClient identityClient;
-    private final ComputeClient computeClient;
-    private final VirtualNetworkClient vcnClient;
+    private final RegionalClient<IdentityClient> identityClient;
+    private final RegionalClient<ComputeClient> computeClient;
+    private final RegionalClient<VirtualNetworkClient> vcnClient;
+    private final List<OciLocation> locations;
     private final Infrastructure.Factory infraFactory;
     private final LoadManager loadManager;
     private final List<FrameworkRunSet> frameworks;
@@ -77,9 +74,10 @@ public class SuiteRunner {
     private final ObjectMapper objectMapper;
     private final Compute compute;
 
-    public SuiteRunner(IdentityClient identityClient,
-                       ComputeClient computeClient,
-                       VirtualNetworkClient vcnClient,
+    public SuiteRunner(RegionalClient<IdentityClient> identityClient,
+                       RegionalClient<ComputeClient> computeClient,
+                       RegionalClient<VirtualNetworkClient> vcnClient,
+                       List<OciLocation> locations,
                        Infrastructure.Factory infraFactory,
                        LoadManager loadManager,
                        List<FrameworkRunSet> frameworks,
@@ -90,6 +88,7 @@ public class SuiteRunner {
         this.identityClient = identityClient;
         this.computeClient = computeClient;
         this.vcnClient = vcnClient;
+        this.locations = locations;
         this.infraFactory = infraFactory;
         this.loadManager = loadManager;
         this.frameworks = frameworks;
@@ -100,7 +99,9 @@ public class SuiteRunner {
     }
 
     public void clean() {
-        cleanCompartment(suiteConfiguration.compartment, false);
+        for (OciLocation location : locations) {
+            cleanCompartment(location, false);
+        }
     }
 
     public void run() throws Exception {
@@ -116,8 +117,8 @@ public class SuiteRunner {
         List<Infrastructure> sharedInfra = new ArrayList<>();
         PhaseTracker phaseTracker = new PhaseTracker(objectMapper, outputDir);
         Semaphore semaphore = new Semaphore(suiteConfiguration.maxConcurrentRuns);
-        OciLocation location = new OciLocation(suiteConfiguration.compartment, suiteConfiguration.availabilityDomain);
         for (int repetition = 0; repetition < suiteConfiguration.repetitions; repetition++) {
+            OciLocation location = locations.get(repetition % locations.size());
             Infrastructure repInfra;
             if (suiteConfiguration.infrastructureMode == InfrastructureMode.REUSE) {
                 repInfra = infraFactory.create(location, outputDir.resolve("infra-" + repetition));
@@ -177,9 +178,6 @@ public class SuiteRunner {
         LOG.info("There are {} benchmarks to run", allTasks.size());
         Path newIndex = outputDir.resolve("index.new.json");
         objectMapper.writeValue(newIndex.toFile(), index);
-        // use try-with-resources to clean the compartment
-        CloseableCompartment compartment = new CloseableCompartment(suiteConfiguration.compartment, false);
-        //noinspection TryFinallyCanBeTryWithResources
         try {
             List<Future<Void>> futures = executor.invokeAll(allTasks);
             for (Future<Void> future : futures) {
@@ -194,7 +192,9 @@ public class SuiteRunner {
                     LOG.error("Failed to close shared infrastructure", e);
                 }
             }
-            compartment.close();
+            for (OciLocation location : locations) {
+                cleanCompartment(location, false);
+            }
         }
         progressTask.cancel(true);
         Files.move(newIndex, outputDir.resolve("index.json"), StandardCopyOption.REPLACE_EXISTING);
@@ -202,43 +202,21 @@ public class SuiteRunner {
         System.exit(0);
     }
 
-    private CloseableCompartment createCompartment(String parent, String name) {
+    private void cleanCompartment(OciLocation location, boolean delete) {
+        String compartment = location.compartmentId();
+        LOG.info("Cleaning compartment {} in region {}...", compartment, location.region());
         Throttle.IDENTITY.takeUninterruptibly();
-        CreateCompartmentResponse response = identityClient.createCompartment(CreateCompartmentRequest.builder()
-                .createCompartmentDetails(CreateCompartmentDetails.builder()
-                        .compartmentId(parent)
-                        .name(name + "-" + ThreadLocalRandom.current().nextInt())
-                        .description("Compartment for benchmark run " + name)
-                        .build())
-                .build());
-        while (true) {
-            Throttle.IDENTITY.takeUninterruptibly();
-            Compartment.LifecycleState state = identityClient.getCompartment(GetCompartmentRequest.builder()
-                    .compartmentId(response.getCompartment().getId())
-                    .build()).getCompartment().getLifecycleState();
-            if (state == Compartment.LifecycleState.Active) {
-                break;
-            } else if (state != Compartment.LifecycleState.Creating) {
-                throw new IllegalStateException("Newly created compartment is already " + state);
-            }
-        }
-        return new CloseableCompartment(response.getCompartment().getId(), true);
-    }
-
-    private void cleanCompartment(String compartment, boolean delete) {
-        LOG.info("Cleaning compartment {}...", compartment);
-        Throttle.IDENTITY.takeUninterruptibly();
-        identityClient.listCompartments(ListCompartmentsRequest.builder()
+        identityClient.forRegion(location).listCompartments(ListCompartmentsRequest.builder()
                         .compartmentId(compartment)
                         .build())
                 .getItems()
                 .parallelStream()
                 .filter(c -> c.getLifecycleState() == Compartment.LifecycleState.Active)
-                .forEach(child -> cleanCompartment(child.getId(), true));
+                .forEach(child -> cleanCompartment(new OciLocation(child.getId(), location.region(), location.availabilityDomain()), true));
 
         Throttle.COMPUTE.takeUninterruptibly();
         for (Instance instance : list(
-                computeClient::listInstances,
+                computeClient.forRegion(location)::listInstances,
                 ListInstancesRequest.builder()
                         .compartmentId(compartment),
                 ListInstancesRequest.Builder::page,
@@ -248,13 +226,13 @@ public class SuiteRunner {
             Instance.LifecycleState lifecycleState = instance.getLifecycleState();
             if (lifecycleState != Instance.LifecycleState.Terminated && lifecycleState != Instance.LifecycleState.Terminating) {
                 //noinspection resource
-                compute.new Instance(instance.getId()).terminateAsync();
+                compute.new Instance(location, instance.getId()).terminateAsync();
             }
         }
 
         Throttle.VCN.takeUninterruptibly();
         List<RouteTable> routeTables = list(
-                vcnClient::listRouteTables,
+                vcnClient.forRegion(location)::listRouteTables,
                 ListRouteTablesRequest.builder()
                         .compartmentId(compartment),
                 ListRouteTablesRequest.Builder::page,
@@ -265,7 +243,7 @@ public class SuiteRunner {
             if (!routeTable.getRouteRules().isEmpty()) {
                 LOG.info("Clearing route table {}", routeTable.getDisplayName());
                 Throttle.VCN.takeUninterruptibly();
-                vcnClient.updateRouteTable(UpdateRouteTableRequest.builder()
+                vcnClient.forRegion(location).updateRouteTable(UpdateRouteTableRequest.builder()
                         .rtId(routeTable.getId())
                         .updateRouteTableDetails(UpdateRouteTableDetails.builder()
                                 .routeRules(Collections.emptyList())
@@ -277,7 +255,7 @@ public class SuiteRunner {
         while (true) {
             Throttle.COMPUTE.takeUninterruptibly();
             List<Instance> instances = list(
-                    computeClient::listInstances,
+                    computeClient.forRegion(location)::listInstances,
                     ListInstancesRequest.builder()
                             .compartmentId(compartment),
                     ListInstancesRequest.Builder::page,
@@ -305,7 +283,7 @@ public class SuiteRunner {
 
         Throttle.VCN.takeUninterruptibly();
         for (Subnet subnet : list(
-                vcnClient::listSubnets,
+                vcnClient.forRegion(location)::listSubnets,
                 ListSubnetsRequest.builder()
                         .compartmentId(compartment),
                 ListSubnetsRequest.Builder::page,
@@ -315,7 +293,7 @@ public class SuiteRunner {
             LOG.info("Deleting subnet {}", subnet.getDisplayName());
             try {
                 Throttle.VCN.takeUninterruptibly();
-                vcnClient.deleteSubnet(DeleteSubnetRequest.builder()
+                vcnClient.forRegion(location).deleteSubnet(DeleteSubnetRequest.builder()
                         .subnetId(subnet.getId())
                         .build());
             } catch (BmcException e) {
@@ -325,7 +303,7 @@ public class SuiteRunner {
 
         Throttle.VCN.takeUninterruptibly();
         List<Vcn> vcns = list(
-                vcnClient::listVcns,
+                vcnClient.forRegion(location)::listVcns,
                 ListVcnsRequest.builder()
                         .compartmentId(compartment),
                 ListVcnsRequest.Builder::page,
@@ -338,7 +316,7 @@ public class SuiteRunner {
                 LOG.info("Deleting route table {}", routeTable.getDisplayName());
                 try {
                     Throttle.VCN.takeUninterruptibly();
-                    vcnClient.deleteRouteTable(DeleteRouteTableRequest.builder()
+                    vcnClient.forRegion(location).deleteRouteTable(DeleteRouteTableRequest.builder()
                             .rtId(routeTable.getId())
                             .build());
                 } catch (BmcException e) {
@@ -349,7 +327,7 @@ public class SuiteRunner {
 
         Throttle.VCN.takeUninterruptibly();
         for (InternetGateway ig : list(
-                vcnClient::listInternetGateways,
+                vcnClient.forRegion(location)::listInternetGateways,
                 ListInternetGatewaysRequest.builder()
                         .compartmentId(compartment),
                 ListInternetGatewaysRequest.Builder::page,
@@ -358,14 +336,14 @@ public class SuiteRunner {
         )) {
             LOG.info("Deleting internet gateway {}", ig.getDisplayName());
             Throttle.VCN.takeUninterruptibly();
-            vcnClient.deleteInternetGateway(DeleteInternetGatewayRequest.builder()
+            vcnClient.forRegion(location).deleteInternetGateway(DeleteInternetGatewayRequest.builder()
                     .igId(ig.getId())
                     .build());
         }
 
         Throttle.VCN.takeUninterruptibly();
         for (NatGateway nat : list(
-                vcnClient::listNatGateways,
+                vcnClient.forRegion(location)::listNatGateways,
                 ListNatGatewaysRequest.builder()
                         .compartmentId(compartment),
                 ListNatGatewaysRequest.Builder::page,
@@ -374,7 +352,7 @@ public class SuiteRunner {
         )) {
             LOG.info("Deleting NAT gateway {}", nat.getDisplayName());
             Throttle.VCN.takeUninterruptibly();
-            vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder()
+            vcnClient.forRegion(location).deleteNatGateway(DeleteNatGatewayRequest.builder()
                     .natGatewayId(nat.getId())
                     .build());
         }
@@ -383,7 +361,7 @@ public class SuiteRunner {
             LOG.info("Deleting VCN {}", vcn.getDisplayName());
             try {
                 Throttle.VCN.takeUninterruptibly();
-                vcnClient.deleteVcn(DeleteVcnRequest.builder()
+                vcnClient.forRegion(location).deleteVcn(DeleteVcnRequest.builder()
                         .vcnId(vcn.getId())
                         .build());
             } catch (BmcException e) {
@@ -394,7 +372,7 @@ public class SuiteRunner {
         if (delete) {
             LOG.info("Deleting compartment {}", compartment);
             Throttle.IDENTITY.takeUninterruptibly();
-            identityClient.deleteCompartment(DeleteCompartmentRequest.builder()
+            identityClient.forRegion(location).deleteCompartment(DeleteCompartmentRequest.builder()
                     .compartmentId(compartment)
                     .build());
         }
@@ -422,26 +400,8 @@ public class SuiteRunner {
         return result;
     }
 
-    private final class CloseableCompartment implements AutoCloseable {
-        private final String id;
-        private final boolean deleteOnExit;
-
-        CloseableCompartment(String id, boolean deleteOnExit) {
-            this.id = id;
-            this.deleteOnExit = deleteOnExit;
-        }
-
-        @Override
-        public void close() {
-            cleanCompartment(id, deleteOnExit);
-        }
-    }
-
     @ConfigurationProperties("suite")
     public record SuiteConfiguration(
-            String region,
-            String availabilityDomain,
-            String compartment,
             List<String> enabledRunTypes,
             int repetitions,
             int maxConcurrentRuns,

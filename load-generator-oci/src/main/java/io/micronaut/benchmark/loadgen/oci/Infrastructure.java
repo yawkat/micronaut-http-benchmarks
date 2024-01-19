@@ -81,7 +81,7 @@ public class Infrastructure implements AutoCloseable {
         progress.update(BenchmarkPhase.SETTING_UP_NETWORK);
         vcnId = vcn.getId();
         Throttle.VCN.take();
-        natId = factory.vcnClient.createNatGateway(CreateNatGatewayRequest.builder()
+        natId = factory.vcnClient.forRegion(location).createNatGateway(CreateNatGatewayRequest.builder()
                 .createNatGatewayDetails(CreateNatGatewayDetails.builder()
                         .compartmentId(location.compartmentId())
                         .vcnId(vcnId)
@@ -89,7 +89,7 @@ public class Infrastructure implements AutoCloseable {
                         .build())
                 .build()).getNatGateway().getId();
         Throttle.VCN.take();
-        internetId = factory.vcnClient.createInternetGateway(CreateInternetGatewayRequest.builder()
+        internetId = factory.vcnClient.forRegion(location).createInternetGateway(CreateInternetGatewayRequest.builder()
                 .createInternetGatewayDetails(CreateInternetGatewayDetails.builder()
                         .compartmentId(location.compartmentId())
                         .vcnId(vcnId)
@@ -98,7 +98,7 @@ public class Infrastructure implements AutoCloseable {
                         .build())
                 .build()).getInternetGateway().getId();
         Throttle.VCN.take();
-        privateRouteTable = factory.vcnClient.createRouteTable(CreateRouteTableRequest.builder()
+        privateRouteTable = factory.vcnClient.forRegion(location).createRouteTable(CreateRouteTableRequest.builder()
                 .createRouteTableDetails(CreateRouteTableDetails.builder()
                         .compartmentId(location.compartmentId())
                         .vcnId(vcnId)
@@ -111,7 +111,7 @@ public class Infrastructure implements AutoCloseable {
                         .build())
                 .build()).getRouteTable().getId();
         Throttle.VCN.take();
-        publicRouteTable = factory.vcnClient.createRouteTable(CreateRouteTableRequest.builder()
+        publicRouteTable = factory.vcnClient.forRegion(location).createRouteTable(CreateRouteTableRequest.builder()
                 .createRouteTableDetails(CreateRouteTableDetails.builder()
                         .compartmentId(location.compartmentId())
                         .vcnId(vcnId)
@@ -124,7 +124,7 @@ public class Infrastructure implements AutoCloseable {
                         .build())
                 .build()).getRouteTable().getId();
         Throttle.VCN.take();
-        privateSubnetId = factory.vcnClient.createSubnet(CreateSubnetRequest.builder()
+        privateSubnetId = factory.vcnClient.forRegion(location).createSubnet(CreateSubnetRequest.builder()
                 .createSubnetDetails(CreateSubnetDetails.builder()
                         .compartmentId(location.compartmentId())
                         .vcnId(vcnId)
@@ -135,7 +135,7 @@ public class Infrastructure implements AutoCloseable {
                         .build())
                 .build()).getSubnet().getId();
         Throttle.VCN.take();
-        publicSubnetId = factory.vcnClient.createSubnet(CreateSubnetRequest.builder()
+        publicSubnetId = factory.vcnClient.forRegion(location).createSubnet(CreateSubnetRequest.builder()
                 .createSubnetDetails(CreateSubnetDetails.builder()
                         .compartmentId(location.compartmentId())
                         .vcnId(vcnId)
@@ -147,7 +147,7 @@ public class Infrastructure implements AutoCloseable {
                 .build()).getSubnet().getId();
 
         Throttle.VCN.take();
-        SecurityList securityList = retry(() -> factory.vcnClient.getSecurityList(GetSecurityListRequest.builder()
+        SecurityList securityList = retry(() -> factory.vcnClient.forRegion(location).getSecurityList(GetSecurityListRequest.builder()
                 .securityListId(vcn.getDefaultSecurityListId())
                 .build()).getSecurityList());
         List<IngressSecurityRule> ingressRules = new ArrayList<>(securityList.getIngressSecurityRules());
@@ -160,7 +160,7 @@ public class Infrastructure implements AutoCloseable {
                 .build());
         retry(() -> {
             Throttle.VCN.take();
-            factory.vcnClient.updateSecurityList(UpdateSecurityListRequest.builder()
+            factory.vcnClient.forRegion(location).updateSecurityList(UpdateSecurityListRequest.builder()
                     .securityListId(vcn.getDefaultSecurityListId())
                     .updateSecurityListDetails(UpdateSecurityListDetails.builder()
                             .ingressSecurityRules(ingressRules)
@@ -226,7 +226,7 @@ public class Infrastructure implements AutoCloseable {
                 if (subnet != null) {
                     retry(() -> {
                         Throttle.VCN.takeUninterruptibly();
-                        return factory.vcnClient.deleteSubnet(DeleteSubnetRequest.builder().subnetId(subnet).build());
+                        return factory.vcnClient.forRegion(location).deleteSubnet(DeleteSubnetRequest.builder().subnetId(subnet).build());
                     });
                 }
             }
@@ -234,26 +234,26 @@ public class Infrastructure implements AutoCloseable {
                 if (routeTable != null) {
                     retry(() -> {
                         Throttle.VCN.takeUninterruptibly();
-                        return factory.vcnClient.deleteRouteTable(DeleteRouteTableRequest.builder().rtId(routeTable).build());
+                        return factory.vcnClient.forRegion(location).deleteRouteTable(DeleteRouteTableRequest.builder().rtId(routeTable).build());
                     });
                 }
             }
             if (internetId != null) {
                 retry(() -> {
                     Throttle.VCN.takeUninterruptibly();
-                    return factory.vcnClient.deleteInternetGateway(DeleteInternetGatewayRequest.builder().igId(internetId).build());
+                    return factory.vcnClient.forRegion(location).deleteInternetGateway(DeleteInternetGatewayRequest.builder().igId(internetId).build());
                 });
             }
             if (natId != null) {
                 retry(() -> {
                     Throttle.VCN.takeUninterruptibly();
-                    return factory.vcnClient.deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
+                    return factory.vcnClient.forRegion(location).deleteNatGateway(DeleteNatGatewayRequest.builder().natGatewayId(natId).build());
                 });
             }
             if (vcnId != null) {
                 retry(() -> {
                     Throttle.VCN.takeUninterruptibly();
-                    return factory.vcnClient.deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
+                    return factory.vcnClient.forRegion(location).deleteVcn(DeleteVcnRequest.builder().vcnId(vcnId).build());
                 });
             }
         } catch (BmcException e) {
@@ -311,7 +311,7 @@ public class Infrastructure implements AutoCloseable {
         while (true) {
             try {
                 Throttle.VCN.take();
-                vcn = factory.vcnClient.createVcn(CreateVcnRequest.builder()
+                vcn = factory.vcnClient.forRegion(location).createVcn(CreateVcnRequest.builder()
                         .createVcnDetails(CreateVcnDetails.builder()
                                 .compartmentId(location.compartmentId())
                                 .displayName("Benchmark network")
@@ -372,12 +372,12 @@ public class Infrastructure implements AutoCloseable {
         relayServerInstance.awaitStartup();
 
         Throttle.COMPUTE.take();
-        String vnic = factory.computeClient.listVnicAttachments(ListVnicAttachmentsRequest.builder()
+        String vnic = factory.computeClient.forRegion(location).listVnicAttachments(ListVnicAttachmentsRequest.builder()
                 .compartmentId(location.compartmentId())
                 .availabilityDomain(location.availabilityDomain())
                 .instanceId(relayServerInstance.id)
                 .build()).getItems().get(0).getVnicId();
-        String publicIp = factory.vcnClient.getVnic(GetVnicRequest.builder()
+        String publicIp = factory.vcnClient.forRegion(location).getVnic(GetVnicRequest.builder()
                 .vnicId(vnic)
                 .build()).getVnic().getPublicIp();
         return new RelayServer(relayServerInstance, publicIp);
@@ -395,8 +395,8 @@ public class Infrastructure implements AutoCloseable {
 
     @Singleton
     public record Factory(
-            ComputeClient computeClient,
-            VirtualNetworkClient vcnClient,
+            RegionalClient<ComputeClient> computeClient,
+            RegionalClient<VirtualNetworkClient> vcnClient,
             Compute compute,
             HyperfoilRunner.Factory hyperfoilRunnerFactory,
             SshFactory sshFactory
