@@ -53,7 +53,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -156,7 +155,15 @@ public class SuiteRunner {
                                     }
                                 } catch (Exception e) {
                                     phaseUpdater.update(BenchmarkPhase.FAILED);
-                                    LOG.error("Failed to run benchmark", e);
+                                    Throwable root = e;
+                                    while (root.getCause() != null) {
+                                        root = root.getCause();
+                                    }
+                                    if (root instanceof InterruptedException) {
+                                        LOG.info("Benchmark interrupted", e);
+                                    } else {
+                                        LOG.error("Failed to run benchmark", e);
+                                    }
                                     executor.shutdownNow();
                                 }
                                 return null;
