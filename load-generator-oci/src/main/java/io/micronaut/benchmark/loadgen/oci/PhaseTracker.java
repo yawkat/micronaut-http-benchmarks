@@ -1,6 +1,7 @@
 package io.micronaut.benchmark.loadgen.oci;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micronaut.core.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,7 +36,7 @@ public class PhaseTracker {
     }
 
     public PhaseUpdater updater(String name) {
-        return (phase, percent) -> update(name, phase, percent);
+        return (phase, percent, msg) -> update(name, phase, percent);
     }
 
     public void update(String name, BenchmarkPhase phase, double phasePercentage) {
@@ -90,10 +91,23 @@ public class PhaseTracker {
     ) {}
 
     interface PhaseUpdater {
-        void update(BenchmarkPhase phase, double percent);
+        void update(BenchmarkPhase phase, double percent, @Nullable String displayProgress);
 
         default void update(BenchmarkPhase phase) {
-            update(phase, 0);
+            update(phase, 0, null);
+        }
+    }
+
+    static abstract class DelegatePhaseUpdater implements PhaseUpdater {
+        private final PhaseUpdater delegate;
+
+        DelegatePhaseUpdater(PhaseUpdater delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void update(BenchmarkPhase phase, double percent, @Nullable String displayProgress) {
+            delegate.update(phase, percent, displayProgress);
         }
     }
 }

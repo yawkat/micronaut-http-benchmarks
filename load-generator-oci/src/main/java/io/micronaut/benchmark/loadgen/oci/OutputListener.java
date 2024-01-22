@@ -1,5 +1,6 @@
 package io.micronaut.benchmark.loadgen.oci;
 
+import io.micronaut.core.annotation.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,6 +9,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -84,7 +86,7 @@ public interface OutputListener {
         }
 
         @Override
-        public void onData(ByteBuffer data) {
+        public synchronized void onData(ByteBuffer data) {
             try {
                 outputStream.write(data.array(), data.arrayOffset() + data.position(), data.remaining());
             } catch (ClosedChannelException ignored) {
@@ -93,12 +95,20 @@ public interface OutputListener {
             }
         }
 
+        public synchronized void println(@NonNull String msg) {
+            try {
+                outputStream.write((msg + "\n").getBytes(StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                LOG.error("Failed to print message", e);
+            }
+        }
+
         @Override
         public void onComplete() {
         }
 
         @Override
-        public void close() throws IOException {
+        public synchronized void close() throws IOException {
             outputStream.close();
         }
     }

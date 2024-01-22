@@ -263,7 +263,7 @@ public class Infrastructure implements AutoCloseable {
 
     public synchronized void run(Path outputDirectory, FrameworkRun run, LoadVariant loadVariant, PhaseTracker.PhaseUpdater progress) throws Exception {
         if (stopped) {
-            throw new IllegalStateException("Already stopped");
+            throw new InterruptedException("Already stopped");
         }
         try {
             if (!started) {
@@ -297,6 +297,20 @@ public class Infrastructure implements AutoCloseable {
     private void run0(Path outputDirectory, FrameworkRun run, LoadVariant loadVariant, PhaseTracker.PhaseUpdater progress) throws Exception {
         try (ClientSession benchmarkServerClient = factory.sshFactory.connect(benchmarkServer, SERVER_IP, relay);
              OutputListener.Write log = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("server.log")))) {
+            // special PhaseUpdater that logs the current benchmark phase for reference.
+            progress = new PhaseTracker.DelegatePhaseUpdater(progress) {
+                String lastDisplay = null;
+
+                @Override
+                public void update(BenchmarkPhase phase, double percent, @Nullable String displayProgress) {
+                    if (!Objects.equals(displayProgress, lastDisplay)) {
+                        log.println("----------------- Benchmark progress changed to: " + displayProgress);
+                        lastDisplay = displayProgress;
+                    }
+                    super.update(phase, percent, displayProgress);
+                }
+            };
+
             run.setupAndRun(
                     benchmarkServerClient,
                     outputDirectory,

@@ -26,11 +26,13 @@ public class JavaRunFactory {
     private final HotspotConfiguration hotspotConfiguration;
     private final NativeImageConfiguration nativeImageConfiguration;
     private final AsyncProfilerConfiguration asyncProfilerConfiguration;
+    private final PerfStatConfiguration perfStatConfiguration;
 
-    public JavaRunFactory(HotspotConfiguration hotspotConfiguration, NativeImageConfiguration nativeImageConfiguration, AsyncProfilerConfiguration asyncProfilerConfiguration) {
+    public JavaRunFactory(HotspotConfiguration hotspotConfiguration, NativeImageConfiguration nativeImageConfiguration, AsyncProfilerConfiguration asyncProfilerConfiguration, PerfStatConfiguration perfStatConfiguration) {
         this.hotspotConfiguration = hotspotConfiguration;
         this.nativeImageConfiguration = nativeImageConfiguration;
         this.asyncProfilerConfiguration = asyncProfilerConfiguration;
+        this.perfStatConfiguration = perfStatConfiguration;
     }
 
     private static String optionsToString(String opts) {
@@ -126,7 +128,7 @@ public class JavaRunFactory {
                             progress.update(BenchmarkPhase.DEPLOYING_SERVER);
                             ScpClientCreator.instance().createScpClient(benchmarkServerClient)
                                     .upload(shadowJar, SHADOW_JAR_LOCATION);
-                            String start = "java ";
+                            String start = perfStatConfiguration.asCommandPrefix() + "java ";
                             if (asyncProfilerConfiguration.enabled()) {
                                 SshUtil.run(benchmarkServerClient, "sudo sysctl kernel.perf_event_paranoid=1", log);
                                 SshUtil.run(benchmarkServerClient, "sudo sysctl kernel.kptr_restrict=0", log);
@@ -191,7 +193,7 @@ public class JavaRunFactory {
                             String niCommandBase = "native-image --no-fallback " + nativeImageOptions + " " + additionalNativeImageOptions;
                             SshUtil.run(benchmarkServerClient, niCommandBase + " --pgo-instrument -jar " + SHADOW_JAR_LOCATION + " pgo-instrument", log);
                             LOG.info("Starting benchmark server for PGO (native, micronaut)");
-                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel("./pgo-instrument")) {
+                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel(perfStatConfiguration.asCommandPrefix() + "./pgo-instrument")) {
                                 OutputListener.Waiter waiter = new OutputListener.Waiter(ByteBuffer.wrap(boundLine));
                                 SshUtil.forwardOutput(cmd, log, waiter);
                                 cmd.open().verify();
@@ -207,7 +209,7 @@ public class JavaRunFactory {
                             progress.update(BenchmarkPhase.BUILDING_IMAGE);
                             SshUtil.run(benchmarkServerClient, niCommandBase + " --pgo -jar " + SHADOW_JAR_LOCATION + " optimized", log);
                             LOG.info("Starting benchmark server (native, " + typePrefix + ")");
-                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel("./optimized")) {
+                            try (ChannelExec cmd = benchmarkServerClient.createExecChannel(perfStatConfiguration.asCommandPrefix() + "./optimized")) {
                                 OutputListener.Waiter waiter = new OutputListener.Waiter(ByteBuffer.wrap(boundLine));
                                 SshUtil.forwardOutput(cmd, log, waiter);
                                 cmd.open().verify();
