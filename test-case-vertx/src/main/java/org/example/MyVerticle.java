@@ -3,6 +3,7 @@ package org.example;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.Json;
@@ -16,6 +17,10 @@ import java.util.List;
 public class MyVerticle extends AbstractVerticle {
     int httpPort;
     int httpsPort;
+
+    public MyVerticle() {
+        this(8080, 8443);
+    }
 
     public MyVerticle(int httpPort, int httpsPort) {
         this.httpPort = httpPort;
@@ -44,9 +49,8 @@ public class MyVerticle extends AbstractVerticle {
     }
 
     private void status(RoutingContext routingContext) {
-        //noinspection resource
         routingContext.response()
-                .putHeader("content-type", "application/json")
+                .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                 .end(Json.encode(new Status(
                         vertx.nettyEventLoopGroup().getClass().getName(),
                         Json.CODEC.getClass().getName()
@@ -62,7 +66,7 @@ public class MyVerticle extends AbstractVerticle {
                     .end();
         } else {
             routingContext.response()
-                    .putHeader("content-type", "application/json")
+                    .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                     .end(Json.encode(result));
         }
     }
