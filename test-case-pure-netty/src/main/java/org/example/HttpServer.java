@@ -45,6 +45,7 @@ public final class HttpServer implements AutoCloseable {
         tcpBootstrap = new ServerBootstrap()
                 .channel(IOUringServerSocketChannel.class)
                 .group(group)
+                .option(ChannelOption.SO_BACKLOG, Integer.MAX_VALUE)
                 .childOption(ChannelOption.AUTO_READ, true);
     }
 
@@ -53,7 +54,7 @@ public final class HttpServer implements AutoCloseable {
                 .childHandler(new ChannelInitializer<>() {
                     @Override
                     protected void initChannel(Channel ch) {
-                        ch.pipeline().addLast(new ReadTimeoutHandler(5, TimeUnit.SECONDS));
+                        ch.pipeline().addLast(new ReadTimeoutHandler(1, TimeUnit.MINUTES));
                         addHttp1Handlers(ch.pipeline());
                     }
                 })
