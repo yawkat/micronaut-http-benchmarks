@@ -359,7 +359,7 @@ public class HyperfoilRunner implements AutoCloseable {
                 if (!Objects.equals(statistic.phase, lastPhase)) {
                     lastPhase = statistic.phase;
                     double progressPercent = (phaseNames.indexOf(statistic.phase) + 1.0) / (phaseNames.size() + 1);
-                    progress.update(benchmarkPhase, progressPercent);
+                    progress.update(benchmarkPhase, progressPercent, statistic.phase);
                 }
             }
             LOG.info("{}", log);
