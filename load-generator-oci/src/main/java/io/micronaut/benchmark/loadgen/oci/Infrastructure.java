@@ -27,6 +27,7 @@ import com.oracle.bmc.core.requests.GetVnicRequest;
 import com.oracle.bmc.core.requests.ListVnicAttachmentsRequest;
 import com.oracle.bmc.core.requests.UpdateSecurityListRequest;
 import com.oracle.bmc.model.BmcException;
+import io.micronaut.core.annotation.Nullable;
 import io.netty.channel.ConnectTimeoutException;
 import jakarta.inject.Singleton;
 import org.apache.sshd.client.session.ClientSession;
@@ -38,6 +39,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
