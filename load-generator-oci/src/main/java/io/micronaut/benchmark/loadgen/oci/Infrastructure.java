@@ -313,12 +313,20 @@ public class Infrastructure implements AutoCloseable {
                 }
             };
 
-            run.setupAndRun(
+            PhaseTracker.PhaseUpdater finalProgress = progress;
+            factory.sutMonitor.monitorAndRun(
                     benchmarkServerClient,
                     outputDirectory,
-                    log,
-                    hyperfoilRunner.benchmarkClosure(outputDirectory, loadVariant.protocol(), loadVariant.body()),
-                    progress);
+                    () -> {
+                        run.setupAndRun(
+                                benchmarkServerClient,
+                                outputDirectory,
+                                log,
+                                hyperfoilRunner.benchmarkClosure(outputDirectory, loadVariant.protocol(), loadVariant.body()),
+                                finalProgress);
+                        return null;
+                    }
+            );
         }
     }
 
@@ -415,7 +423,8 @@ public class Infrastructure implements AutoCloseable {
             RegionalClient<VirtualNetworkClient> vcnClient,
             Compute compute,
             HyperfoilRunner.Factory hyperfoilRunnerFactory,
-            SshFactory sshFactory
+            SshFactory sshFactory,
+            SutMonitor sutMonitor
     ) {
         Infrastructure create(OciLocation location, Path logDirectory) {
             return new Infrastructure(this, location, logDirectory);
