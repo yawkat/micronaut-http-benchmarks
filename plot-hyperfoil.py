@@ -310,6 +310,13 @@ def main():
                 if c + r * rows >= len(meta["hyperfoilConfiguration"]["ops"]):
                     axs[r][c].remove()
         plt.xlabel("Percentile")
+        plt.suptitle("""\
+Request latency at different request rates. Each graph represents a fixed request rate.
+Each request latency is recorded and shown in the graph. The horizontal axis is the latency percentile, the vertical axis the latency at that percentile.
+For fairness, each framework is tested on the same infrastructure (server VM + client VMs) in random order. To reduce noise, the suite is repeated on independent infrastructures. The results of each infrastructure benchmark are combined to produce the plotted line.
+A benchmark run fails when the server cannot keep up with requests. Should a framework fail at a given request rate on any infrastructure, its line is removed from the plot.
+To visualize result spread, the median (+) and average (x) latency of each run is also shown. These are not merged between separate infrastructures, so if a framework only fails on one infra, median latency on the other infras is still shown.""",
+                     ha="left", x=0)
     elif mode == MODE_SIMPLE:
         plt.tight_layout()
     plt.show()
