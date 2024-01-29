@@ -40,6 +40,8 @@ public class MyVerticle extends AbstractVerticle {
         Future<HttpServer> https = vertx.createHttpServer(new HttpServerOptions()
                         .setSsl(true)
                         .setUseAlpn(true)
+                        .addEnabledCipherSuite("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
+                        .addEnabledCipherSuite("TLS_AES_128_GCM_SHA256")
                         .setKeyCertOptions(SelfSignedCertificate.create().keyCertOptions()))
                 .requestHandler(router)
                 .listen(httpsPort)

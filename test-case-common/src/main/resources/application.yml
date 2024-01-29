@@ -4,10 +4,8 @@ micronaut:
     date-header: false
     ssl:
       enabled: true
-      key-store:
-        path: classpath:server.p12
-        password: password
-        type: PKCS12
+      ciphers: [TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_AES_128_GCM_SHA256]
+      build-self-signed: true
     netty:
       listeners:
         http1:

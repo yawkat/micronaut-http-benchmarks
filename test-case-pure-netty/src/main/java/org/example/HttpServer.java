@@ -29,6 +29,7 @@ import io.netty.incubator.channel.uring.IOUringServerSocketChannel;
 import javax.net.ssl.SSLException;
 import java.net.InetSocketAddress;
 import java.security.cert.CertificateException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public final class HttpServer implements AutoCloseable {
@@ -72,6 +73,7 @@ public final class HttpServer implements AutoCloseable {
                         ApplicationProtocolNames.HTTP_2,
                         ApplicationProtocolNames.HTTP_1_1
                 ))
+                .ciphers(List.of("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_AES_128_GCM_SHA256"))
                 .build();
         Channel channel = tcpBootstrap.clone()
                 .childHandler(new ChannelInitializer<>() {

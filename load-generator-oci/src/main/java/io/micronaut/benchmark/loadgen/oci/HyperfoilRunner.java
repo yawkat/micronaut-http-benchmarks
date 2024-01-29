@@ -260,10 +260,10 @@ public class HyperfoilRunner implements AutoCloseable {
 
         String statusUri = prot.scheme + "://" + ip + ":" + port + "/status";
         String findUri = prot.scheme + "://" + ip + ":" + port + "/search/find";
-        String curlBase = "curl " + (protocol == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --silent --insecure ";
+        String curlBase = "curl " + (protocol == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --insecure ";
         Infrastructure.retry(() -> {
-            try (OutputListener.Write write = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("status.json")))) {
-                SshUtil.run(controllerSession, curlBase + statusUri, write);
+            try (OutputListener.Write write = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("status.http")))) {
+                SshUtil.run(controllerSession, curlBase + "-v " + statusUri, write);
             }
             return null;
         }, controllerPortForward.get()::disconnect);
@@ -271,7 +271,7 @@ public class HyperfoilRunner implements AutoCloseable {
             String testBody = factory.objectMapper.writeValueAsString(new Input(List.of("foo", "bar"), "ar"));
             ByteArrayOutputStream resp = new ByteArrayOutputStream();
             try (OutputListener.Write write = new OutputListener.Write(resp)) {
-                SshUtil.run(controllerSession, curlBase + "-d '" + testBody + "' -H 'Content-Type: application/json' " + findUri, write);
+                SshUtil.run(controllerSession, curlBase + "--silent -d '" + testBody + "' -H 'Content-Type: application/json' " + findUri, write);
             }
             Result result = factory.objectMapper.readValue(resp.toByteArray(), Result.class);
             if (result.listIndex != 1 || result.stringIndex != 1) {

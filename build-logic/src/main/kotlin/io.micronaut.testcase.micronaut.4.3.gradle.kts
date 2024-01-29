@@ -11,7 +11,7 @@ repositories {
 
 dependencies {
     runtimeOnly("org.yaml:snakeyaml")
-    implementation("io.micronaut:micronaut-http-server-netty:4.3.0-SNAPSHOT")
+    implementation("io.micronaut:micronaut-http-server-netty:4.3.0")
 }
 
 micronaut {

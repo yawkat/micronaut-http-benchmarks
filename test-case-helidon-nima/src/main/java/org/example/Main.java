@@ -43,6 +43,8 @@ public class Main {
                         .addConnectionSelector(Http1ConnectionSelector.builder().config(Http1Config.builder().build()).build()))
                 .putSocket("https", s -> s.tls(Tls.builder()
                         .applicationProtocols(List.of("h2", "http/1.1"))
+                        .addEnabledCipherSuite("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
+                        .addEnabledCipherSuite("TLS_AES_128_GCM_SHA256")
                         .privateKey(ssc.key())
                         .privateKeyCertChain(List.of(ssc.cert()))
                         .build())
