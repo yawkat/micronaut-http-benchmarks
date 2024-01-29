@@ -80,7 +80,7 @@ public final class HttpServer implements AutoCloseable {
                     @Override
                     protected void initChannel(Channel ch) {
                         ch.pipeline()
-                                .addLast(new ReadTimeoutHandler(5, TimeUnit.SECONDS))
+                                .addLast(new ReadTimeoutHandler(1, TimeUnit.MINUTES))
                                 .addLast(new SslHandler(sslContext.newEngine(ch.alloc())))
                                 .addLast(new ApplicationProtocolNegotiationHandler("http/1.1") {
                                     @Override
