@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 public record LoadVariant(
         @JsonIgnore
         String name,
-        Protocol protocol,
+        ProtocolSettings protocol,
         int stringCount,
         int stringLength,
         @JsonIgnore

@@ -40,14 +40,28 @@ compartment-id="ocid1.compartment.oc1..aaaaaaaaqpsmu5vcjf75ejqwvhhg75ndjpjdmxihi
 region="ap-melbourne-1"
 availability-domain="hkYI:AP-MELBOURNE-1-AD-1"
 
-# configuration for the benchmark load. applies to all frameworks.
-[load]
 # protocols to test
-protocols=[
-    "HTTP1",
-    #"HTTPS1",
-    #"HTTPS2",
-]
+#[[load.protocols]]
+#protocol="HTTP1"
+#compile-ops=25
+#shared-connections=10000
+#pipelining-limit=1
+#ops=[2000, 8000, 32000, 64000, 80000, 96000, 112000, 128000, 256000, 512000]
+
+#[[load.protocols]]
+#protocol="HTTPS1"
+#compile-ops=25
+#shared-connections=5000
+#pipelining-limit=1
+#ops=[2000, 8000, 32000, 48000, 64000, 72000, 80000, 128000]
+
+[[load.protocols]]
+protocol="HTTPS2"
+compile-ops=25
+shared-connections=64
+max-http2-streams=100
+ops=[2000, 8000, 32000, 64000, 80000, 96000, 112000, 128000, 256000, 512000]
+
 # different json body sizes to test
 [[load.documents]]
 string-count=6
@@ -67,19 +81,11 @@ string-length=6
 
 # configuration for the hyperfoil cluster
 [hyperfoil]
-agent-count=5
+agent-count=8
 
 warmup-duration="1m"
 pgo-duration="2m"
-compile-ops=50
-shared-connections=24000
-session-limit-factor=2
-pipelining-limit=1
-
-# different ops/s to try
-ops=[
-    #5, 10, 15, 25,
-    50, 75, 100, 200, 400, 800, 1000, 2000, 4000, 8000, 16000]
+session-limit-factor=1
 # duration per ops/s benchmark
 benchmark-duration="2m"
 
@@ -103,9 +109,9 @@ debug-authorized-keys=["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIObBGYqEuujvGhBwr1S/
 
 # instance that the test server runs on
 [compute.instance-types.benchmark-server]
-shape="VM.Standard.E5.Flex"
-ocpus=4
-memory-in-gb=16
+shape="VM.Standard.E4.Flex"
+ocpus=3
+memory-in-gb=24
 image="Oracle-Linux-9.2-2023.12.08-0"
 
 # relay server used as an SSH gateway to other servers
@@ -125,13 +131,13 @@ image="Oracle-Linux-9.2-aarch64-2023.12.08-0"
 # hyperfoil agent
 [compute.instance-types.hyperfoil-agent]
 shape="VM.Standard.E4.Flex"
-ocpus=10
-memory-in-gb=32
+ocpus=8
+memory-in-gb=16
 image="Oracle-Linux-9.2-2023.12.08-0"
 
 [variants.hotspot]
 version=21
-common-options="-XX:+UseZGC -Xmx12G -Dio.netty.iouring.iosqeAsyncThreshold=2147483647"
+common-options="-XX:+UseZGC -Xms12G -Xmx12G -Dio.netty.iouring.iosqeAsyncThreshold=2147483647 -Dio.netty.iouring.ringSize=8192"
 option-choices=[""]
 
 [variants.hotspot.async-profiler]

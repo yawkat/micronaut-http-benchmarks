@@ -163,7 +163,7 @@ def main():
         index = json.load(f)
     index = sorted(index, key=lambda i: i["name"])
     index = [i for i in index if not has_error(i["name"])]
-    discriminator_properties = [("type",), ("parameters", "compileConfiguration", "micronaut"), ("parameters", "compileConfiguration", "json"), ("parameters", "compileConfiguration", "transport")]
+    discriminator_properties = [("type",), ("parameters", "compileConfiguration", "micronaut"), ("parameters", "compileConfiguration", "json"), ("parameters", "compileConfiguration", "transport"), ("parameters", "compileConfiguration", "tcnative")]
     filter_properties = {
         #("type",): "mn-hotspot"
     }
@@ -187,9 +187,11 @@ def main():
     min_time = None
     discriminated = []
     meta = None
+    protocol_settings = None
     for run in index:
         if matches(filter_properties, run):
             continue
+        protocol_settings = run["load"]["protocol"]
         run_data = load_run(run["name"])
         if meta is None:
             with open(f"output/{run['name']}/meta.json") as f:
@@ -212,13 +214,13 @@ def main():
     colors_by_discriminator = {d: f'C{i}' for i, d in enumerate(discriminated)}
 
     if mode == MODE_HISTOGRAM:
-        rows = 4
-        cols = int(np.ceil(len(meta["hyperfoilConfiguration"]["ops"]) / rows))
+        rows = 2
+        cols = int(np.ceil(len(protocol_settings["ops"]) / rows))
         fig, axs = plt.subplots(rows, cols)
     elif mode == MODE_SIMPLE:
         ax = plt.subplot()
 
-    for phase_i, ops in enumerate(meta["hyperfoilConfiguration"]["ops"]):
+    for phase_i, ops in enumerate(protocol_settings["ops"]):
         phase = f"main/{phase_i}"
         if mode == MODE_HISTOGRAM:
             ax: matplotlib.axes.Axes = axs[phase_i // len(axs[0])][phase_i % len(axs[0])]
@@ -307,7 +309,7 @@ def main():
     if mode == MODE_HISTOGRAM:
         for r in range(rows):
             for c in range(cols):
-                if c + r * rows >= len(meta["hyperfoilConfiguration"]["ops"]):
+                if c + r * rows >= len(protocol_settings["ops"]):
                     axs[r][c].remove()
         plt.xlabel("Percentile")
         plt.suptitle("""\

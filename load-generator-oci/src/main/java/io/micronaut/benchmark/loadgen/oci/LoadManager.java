@@ -29,7 +29,7 @@ public class LoadManager {
         return loadConfiguration.documents.stream()
                 .flatMap(doc -> {
                     byte[] testBody = createTestBody(doc);
-                    return loadConfiguration.protocols.stream().map(prot -> new LoadVariant(loadName(prot, doc), prot, doc.stringCount, doc.stringLength, testBody));
+                    return loadConfiguration.protocols.stream().map(prot -> new LoadVariant(loadName(prot.protocol(), doc), prot, doc.stringCount, doc.stringLength, testBody));
                 })
                 .toList();
     }
@@ -68,7 +68,7 @@ public class LoadManager {
     }
 
     @ConfigurationProperties("load")
-    record LoadConfiguration(List<Protocol> protocols, List<DocumentConfiguration> documents) {
+    record LoadConfiguration(List<ProtocolSettings> protocols, List<DocumentConfiguration> documents) {
         @EachProperty(value = "documents", list = true)
         record DocumentConfiguration(int stringCount, int stringLength) {
         }

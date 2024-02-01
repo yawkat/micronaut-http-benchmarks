@@ -204,21 +204,10 @@ public class HyperfoilRunner implements AutoCloseable {
 
                 this.client.complete(client);
 
-                try {
-                    //noinspection InfiniteLoopStatement
-                    while (true) {
-                        synchronized (this) {
-                            wait(); // wait for interrupt
-                        }
-                    }
-                } finally {
-                    LOG.info("Downloading agent logs…");
-                    try {
-                        for (String agent : Infrastructure.retry(client::agents, controllerPortForward::disconnect)) {
-                            Infrastructure.retry(() -> client.downloadLog(agent, null, 0, logDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile()), controllerPortForward::disconnect);
-                        }
-                    } catch (Exception e) {
-                        LOG.error("Failed to download agent logs", e);
+                //noinspection InfiniteLoopStatement
+                while (true) {
+                    synchronized (this) {
+                        wait(); // wait for interrupt
                     }
                 }
             } finally {
@@ -236,7 +225,7 @@ public class HyperfoilRunner implements AutoCloseable {
         this.relay.complete(relay);
     }
 
-    public FrameworkRun.BenchmarkClosure benchmarkClosure(Path outputDirectory, Protocol protocol, byte[] body) {
+    public FrameworkRun.BenchmarkClosure benchmarkClosure(Path outputDirectory, ProtocolSettings protocol, byte[] body) {
         return new FrameworkRun.BenchmarkClosure() {
             @Override
             public void benchmark(PhaseTracker.PhaseUpdater progress) throws Exception {
@@ -250,17 +239,17 @@ public class HyperfoilRunner implements AutoCloseable {
         };
     }
 
-    private void benchmark(Path outputDirectory, Protocol protocol, byte[] body, PhaseTracker.PhaseUpdater progress, boolean forPgo) throws Exception {
+    private void benchmark(Path outputDirectory, ProtocolSettings protocol, byte[] body, PhaseTracker.PhaseUpdater progress, boolean forPgo) throws Exception {
         BenchmarkPhase benchmarkPhase = forPgo ? BenchmarkPhase.PGO : BenchmarkPhase.BENCHMARKING;
 
         progress.update(benchmarkPhase);
         String ip = Infrastructure.SERVER_IP;
-        int port = protocol == Protocol.HTTP1 ? 8080 : 8443;
-        io.hyperfoil.http.config.Protocol prot = protocol == Protocol.HTTP1 ? io.hyperfoil.http.config.Protocol.HTTP : io.hyperfoil.http.config.Protocol.HTTPS;
+        int port = protocol.protocol() == Protocol.HTTP1 ? 8080 : 8443;
+        io.hyperfoil.http.config.Protocol prot = protocol.protocol() == Protocol.HTTP1 ? io.hyperfoil.http.config.Protocol.HTTP : io.hyperfoil.http.config.Protocol.HTTPS;
 
         String statusUri = prot.scheme + "://" + ip + ":" + port + "/status";
         String findUri = prot.scheme + "://" + ip + ":" + port + "/search/find";
-        String curlBase = "curl " + (protocol == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --insecure ";
+        String curlBase = "curl " + (protocol.protocol() == Protocol.HTTPS2 ? "--http2" : "--http1.1") + " -H 'Accept: application/json' --insecure ";
         Infrastructure.retry(() -> {
             try (OutputListener.Write write = new OutputListener.Write(Files.newOutputStream(outputDirectory.resolve("status.http")))) {
                 SshUtil.run(controllerSession, curlBase + "-v " + statusUri, write);
@@ -296,30 +285,31 @@ public class HyperfoilRunner implements AutoCloseable {
                 .protocol(prot)
                 .host(ip)
                 .port(port)
-                .allowHttp1x(protocol != Protocol.HTTPS2)
-                .allowHttp2(protocol == Protocol.HTTPS2)
-                .sharedConnections(factory.config.sharedConnections)
+                .allowHttp1x(protocol.protocol() != Protocol.HTTPS2)
+                .allowHttp2(protocol.protocol() == Protocol.HTTPS2)
+                .sharedConnections(protocol.sharedConnections())
                 .connectionStrategy(ConnectionStrategy.SHARED_POOL)
-                .pipeliningLimit(factory.config.pipeliningLimit);
+                .pipeliningLimit(protocol.pipeliningLimit())
+                .maxHttp2Streams(protocol.maxHttp2Streams());
 
         List<String> phaseNames = new ArrayList<>();
         if (!forPgo) {
             phaseNames.add("warmup");
             prepareScenario(body, ip, port, benchmark.addPhase("warmup")
-                    .constantRate(factory.config.compileOps)
-                    .maxSessions((int) (factory.config.compileOps * factory.config.sessionLimitFactor))
+                    .constantRate(protocol.compileOps())
+                    .maxSessions((int) (protocol.compileOps() * factory.config.sessionLimitFactor))
                     .duration(TimeUnit.MILLISECONDS.convert(factory.config.warmupDuration))
                     .isWarmup(true)
                     .scenario());
             String lastPhase = "warmup";
-            for (int i = 0; i < factory.config.ops.size(); i++) {
-                int ops = factory.config.ops.get(i);
+            for (int i = 0; i < protocol.ops().size(); i++) {
+                int ops = protocol.ops().get(i);
                 String phaseName = "main/" + i;
                 phaseNames.add(phaseName);
                 prepareScenario(body, ip, port, benchmark.addPhase(phaseName)
                         .constantRate(0)
                         .usersPerSec(ops)
-                        .maxSessions(Math.min((int) (ops * factory.config.sessionLimitFactor), factory.config.sharedConnections))
+                        .maxSessions(Math.min((int) (ops * factory.config.sessionLimitFactor), protocol.sharedConnections()))
                         .duration(TimeUnit.MILLISECONDS.convert(factory.config.benchmarkDuration))
                         .isWarmup(false)
                         .startAfter(lastPhase)
@@ -329,8 +319,8 @@ public class HyperfoilRunner implements AutoCloseable {
         } else {
             phaseNames.add("pgo");
             prepareScenario(body, ip, port, benchmark.addPhase("pgo")
-                    .constantRate(factory.config.compileOps)
-                    .maxSessions((int) (factory.config.compileOps * factory.config.sessionLimitFactor))
+                    .constantRate(protocol.compileOps())
+                    .maxSessions((int) (protocol.compileOps() * factory.config.sessionLimitFactor))
                     .duration(TimeUnit.MILLISECONDS.convert(factory.config.pgoDuration))
                     .isWarmup(false)
                     .scenario());
@@ -396,6 +386,15 @@ public class HyperfoilRunner implements AutoCloseable {
         }
 
         if (!forPgo || !benchmarkFailures.isEmpty()) {
+            LOG.info("Downloading agent logs…");
+            try {
+                for (String agent : Infrastructure.retry(client::agents, controllerPortForward.get()::disconnect)) {
+                    Infrastructure.retry(() -> client.downloadLog(agent, null, 0, outputDirectory.resolve(agent.replaceAll("[^0-9a-zA-Z]", "") + ".log").toFile()), controllerPortForward.get()::disconnect);
+                }
+            } catch (Exception e) {
+                LOG.error("Failed to download agent logs", e);
+            }
+
             LOG.info("Benchmark complete, writing output");
             Path outputPath = outputDirectory.resolve(benchmarkFailures.isEmpty() ? "output.json" : "output-failed.json");
             Files.write(outputPath, wrapper.resultBytes);
@@ -467,10 +466,6 @@ public class HyperfoilRunner implements AutoCloseable {
             Duration benchmarkDuration,
             Duration pgoDuration,
 
-            int compileOps,
-            List<Integer> ops,
-            int sharedConnections,
-            int pipeliningLimit,
             double sessionLimitFactor
     ) {
     }
