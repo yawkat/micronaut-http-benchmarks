@@ -8,7 +8,7 @@ plugins {
 }
 
 dependencies {
-    runtimeOnly("io.netty.incubator:netty-incubator-transport-native-io_uring")
+    runtimeOnly("io.netty.incubator:netty-incubator-transport-native-io_uring::linux-x86_64")
 }
 
 tasks.withType<BuildNativeImageTask>().configureEach {
