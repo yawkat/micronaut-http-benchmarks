@@ -2,7 +2,6 @@ package org.example;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -11,10 +10,8 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
-import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
-import io.netty.handler.codec.http2.Http2MultiplexHandler;
+import io.netty.handler.codec.http2.Http2ConnectionHandlerBuilder;
 import io.netty.handler.codec.http2.Http2Settings;
-import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec;
 import io.netty.handler.ssl.ApplicationProtocolConfig;
 import io.netty.handler.ssl.ApplicationProtocolNames;
 import io.netty.handler.ssl.ApplicationProtocolNegotiationHandler;
@@ -35,13 +32,10 @@ import java.util.concurrent.TimeUnit;
 public final class HttpServer implements AutoCloseable {
     private static final Http2Settings INITIAL_H2_SETTINGS = Http2Settings.defaultSettings();
 
-    private final ChannelHandler requestHandler;
     private final ServerBootstrap tcpBootstrap;
     private final EventLoopGroup group;
 
-    public HttpServer(ChannelHandler requestHandler) {
-        this.requestHandler = requestHandler;
-
+    public HttpServer() {
         group = new IOUringEventLoopGroup(Runtime.getRuntime().availableProcessors());
         tcpBootstrap = new ServerBootstrap()
                 .channel(IOUringServerSocketChannel.class)
@@ -101,23 +95,16 @@ public final class HttpServer implements AutoCloseable {
     private void addHttp1Handlers(ChannelPipeline pipeline) {
         pipeline.addLast(new HttpServerCodec())
                 .addLast(makeAggregator())
-                .addLast(requestHandler);
+                .addLast(RequestHandler.INSTANCE);
     }
 
     private void addHttp2Handlers(ChannelPipeline pipeline) {
-        pipeline.addLast(Http2FrameCodecBuilder.forServer()
+        pipeline.addLast(new Http2ConnectionHandlerBuilder()
+                        .server(true)
                         .validateHeaders(true)
                         .initialSettings(INITIAL_H2_SETTINGS)
-                        .build())
-                .addLast(new Http2MultiplexHandler(new ChannelInitializer<>() {
-                    @Override
-                    protected void initChannel(Channel ch) {
-                        ch.pipeline()
-                                .addLast(new Http2StreamFrameToHttpObjectCodec(true, true))
-                                .addLast(makeAggregator())
-                                .addLast(requestHandler);
-                    }
-                }));
+                        .frameListener(new RequestHandlerHttp2Frame())
+                        .build());
     }
 
     private static HttpObjectAggregator makeAggregator() {

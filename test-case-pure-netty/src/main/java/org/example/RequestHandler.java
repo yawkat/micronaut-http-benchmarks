@@ -1,11 +1,6 @@
 package org.example;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.ObjectWriter;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.ByteBufOutputStream;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -17,21 +12,14 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslProvider;
 import io.netty.handler.timeout.ReadTimeoutException;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
-import java.util.List;
 
 @ChannelHandler.Sharable
 public class RequestHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
-    private final ObjectReader reader = new ObjectMapper().readerFor(Input.class);
-    private final ObjectWriter writerResult = new ObjectMapper().writerFor(Result.class);
-    private final ObjectWriter writerStatus = new ObjectMapper().writerFor(Status.class);
+    static final RequestHandler INSTANCE = new RequestHandler();
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
@@ -82,29 +70,8 @@ public class RequestHandler extends SimpleChannelInboundHandler<FullHttpRequest>
             return new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.UNSUPPORTED_MEDIA_TYPE);
         }
 
-        ByteBuf content = msg.content();
-        Input input;
-        if (content.hasArray()) {
-            input = reader.readValue(content.array(), content.readerIndex() + content.arrayOffset(), content.readableBytes());
-        } else {
-            input = reader.readValue((InputStream) new ByteBufInputStream(content));
-        }
-
-        Result result = find(input.haystack(), input.needle());
-        if (result == null) {
-            return new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
-        } else {
-            return serialize(ctx, writerResult, result);
-        }
-    }
-
-    private FullHttpResponse serialize(ChannelHandlerContext ctx, ObjectWriter writer, Object result) throws IOException {
-        ByteBuf buffer = ctx.alloc().buffer();
-        writer.writeValue((OutputStream) new ByteBufOutputStream(buffer), result);
-        DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buffer);
-        response.headers().add(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
-        //response.headers().add(HttpHeaderNames.CONTENT_LENGTH, buffer.readableBytes());
-        return response;
+        ByteBuf res = AgnosticRequestHandler.INSTANCE.find(ctx, msg.content());
+        return res == null ? new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND) : ok(res);
     }
 
     private FullHttpResponse computeResponseStatus(ChannelHandlerContext ctx, FullHttpRequest msg) throws IOException {
@@ -112,25 +79,13 @@ public class RequestHandler extends SimpleChannelInboundHandler<FullHttpRequest>
             return new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.METHOD_NOT_ALLOWED);
         }
 
-        Status status = new Status(
-                ctx.channel().getClass().getName(),
-                SslContext.defaultServerProvider()
-        );
-
-        return serialize(ctx, writerStatus, status);
+        return ok(AgnosticRequestHandler.INSTANCE.status(ctx));
     }
 
-    private static Result find(List<String> haystack, String needle) {
-        for (int listIndex = 0; listIndex < haystack.size(); listIndex++) {
-            String s = haystack.get(listIndex);
-            int stringIndex = s.indexOf(needle);
-            if (stringIndex != -1) {
-                return new Result(listIndex, stringIndex);
-            }
-        }
-        return null;
+    private FullHttpResponse ok(ByteBuf buffer) {
+        DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buffer);
+        response.headers().add(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
+        //response.headers().add(HttpHeaderNames.CONTENT_LENGTH, buffer.readableBytes());
+        return response;
     }
-
-    record Status(String channelImplementation,
-                  SslProvider sslProvider) {}
 }
