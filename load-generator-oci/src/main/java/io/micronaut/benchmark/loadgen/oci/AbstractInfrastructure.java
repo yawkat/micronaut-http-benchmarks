@@ -31,6 +31,8 @@ import io.netty.channel.ConnectTimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,6 +73,11 @@ public abstract class AbstractInfrastructure implements AutoCloseable {
     }
 
     protected final void setupBase(PhaseTracker.PhaseUpdater progress) throws Exception {
+        try {
+            Files.createDirectories(logDirectory);
+        } catch (FileAlreadyExistsException ignored) {
+        }
+
         progress.update(BenchmarkPhase.CREATING_VCN);
         Vcn vcn = createVcn(location);
         progress.update(BenchmarkPhase.SETTING_UP_NETWORK);
@@ -172,7 +179,7 @@ public abstract class AbstractInfrastructure implements AutoCloseable {
                 .launch();
     }
 
-    protected SshFactory.Relay relay() throws Exception {
+    protected final SshFactory.Relay relay() throws Exception {
         if (relay == null) {
             relayServerInstance.awaitStartup();
 
@@ -224,7 +231,7 @@ public abstract class AbstractInfrastructure implements AutoCloseable {
         return vcn;
     }
 
-    protected void terminateRelayAsync() {
+    protected final void terminateRelayAsync() {
         if (relayServer != null) {
             relayServer.instance.terminateAsync();
         }

@@ -33,7 +33,7 @@ public final class SshUtil {
         }
     }
 
-    static void openFirewallPorts(ClientSession benchmarkServerClient, OutputListener... log) throws IOException {
+    public static void openFirewallPorts(ClientSession benchmarkServerClient, OutputListener... log) throws IOException {
         try (ChannelExec session = benchmarkServerClient.createExecChannel("sudo tee /etc/nftables/main.nft");
              InputStream nft = Infrastructure.class.getResourceAsStream("/main.nft")) {
             session.setIn(nft);

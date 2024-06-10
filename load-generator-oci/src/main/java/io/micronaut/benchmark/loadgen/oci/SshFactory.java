@@ -85,7 +85,7 @@ public class SshFactory {
         return sshClient;
     }
 
-    ClientSession connect(
+    public ClientSession connect(
             @Nullable Compute.Instance instance,
             String instanceIp,
             @Nullable Relay relay

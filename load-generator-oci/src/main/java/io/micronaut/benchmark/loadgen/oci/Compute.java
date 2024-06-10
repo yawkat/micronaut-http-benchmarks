@@ -51,11 +51,15 @@ public class Compute {
     }
 
     public Launch builder(String instanceType, OciLocation location, String subnetId) {
-        return new Launch(instanceType, instanceTypes.get(instanceType), location, subnetId);
+        return new Launch(instanceType, getInstanceType(instanceType), location, subnetId);
     }
 
     public int getCoreCount(String instanceType) {
-        return (int) instanceTypes.get(instanceType).ocpus;
+        return (int) getInstanceType(instanceType).ocpus;
+    }
+
+    public ComputeConfiguration.InstanceType getInstanceType(String instanceType) {
+        return instanceTypes.get(instanceType);
     }
 
     public class Launch {

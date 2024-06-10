@@ -90,7 +90,7 @@ public class PhaseTracker {
             double phasePercentage
     ) {}
 
-    interface PhaseUpdater {
+    public interface PhaseUpdater {
         void update(BenchmarkPhase phase, double percent, @Nullable String displayProgress);
 
         default void update(BenchmarkPhase phase) {

@@ -112,28 +112,28 @@ debug-authorized-keys=["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIObBGYqEuujvGhBwr1S/
 shape="VM.Standard.E4.Flex"
 ocpus=3
 memory-in-gb=24
-image="Oracle-Linux-9.2-2023.12.08-0"
+image="Oracle-Linux-9.3-2024.04.22-0"
 
 # relay server used as an SSH gateway to other servers
 [compute.instance-types.relay-server]
 shape="VM.Standard.A1.Flex"
 ocpus=1
 memory-in-gb=2
-image="Oracle-Linux-9.2-aarch64-2023.12.08-0"
+image="Oracle-Linux-9.3-aarch64-2024.04.22-0"
 
 # hyperfoil controller
 [compute.instance-types.hyperfoil-controller]
 shape="VM.Standard.A1.Flex"
 ocpus=2
 memory-in-gb=4
-image="Oracle-Linux-9.2-aarch64-2023.12.08-0"
+image="Oracle-Linux-9.3-aarch64-2024.04.22-0"
 
 # hyperfoil agent
 [compute.instance-types.hyperfoil-agent]
 shape="VM.Standard.E4.Flex"
 ocpus=8
 memory-in-gb=16
-image="Oracle-Linux-9.2-2023.12.08-0"
+image="Oracle-Linux-9.3-2024.04.22-0"
 
 [variants.hotspot]
 version=21
@@ -171,3 +171,29 @@ micronaut=[
     "4.3",
 ]
 java=["17"]
+
+[techempower]
+compartment-id="ocid1.compartment.oc1..aaaaaaaaxhkap5z4hpt3zbbxrxmohfd3nkaf7bxh2p6f6ufalbtaxupgyj2q"
+region="ap-tokyo-1"
+availability-domain="hkYI:AP-TOKYO-1-AD-1"
+
+[compute.instance-types.te-server]
+shape="BM.Standard3.64"
+ocpus=64
+memory-in-gb=1024
+image="Oracle-Linux-9.3-2024.04.22-0"
+[compute.instance-types.te-client]
+shape="VM.Standard.E4.Flex"
+ocpus=64
+memory-in-gb=64
+image="Oracle-Linux-9.3-2024.04.22-0"
+[compute.instance-types.te-database]
+shape="VM.Standard.E4.Flex"
+ocpus=64
+memory-in-gb=256
+image="Oracle-Linux-9.3-2024.04.22-0"
+[compute.instance-types.te-toolset]
+shape="VM.Standard.E4.Flex"
+ocpus=2
+memory-in-gb=4
+image="Oracle-Linux-9.3-2024.04.22-0"
